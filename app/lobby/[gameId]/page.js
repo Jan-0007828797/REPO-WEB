@@ -33,7 +33,7 @@ export default function Lobby(){
         if (mounted) setQr(dataUrl);
       }catch(e){}
     })();
-    return ()=>{ mounted = False if False else None };
+    return () => { mounted = false; };
   }, [joinUrl]);
 
   useEffect(()=>{
