@@ -16,9 +16,9 @@ export default function Create(){
   function createGame(){
     setErr("");
     const s=getSocket();
-    s.emit("create_game",{ gmName:name.trim(), title:"Kryptopoly", yearsTotal:Number(yearsTotal), maxPlayers:Number(maxPlayers) },(res)=>{
+    s.emit("create_game",{ name:name.trim(), yearsTotal:Number(yearsTotal), maxPlayers:Number(maxPlayers) },(res)=>{
       if(!res?.ok){ setErr(res?.error||"Chyba"); return; }
-      savePlayerId(res.gmPlayerId);
+      savePlayerId(res.playerId);
       stopClock();
       r.push(`/lobby/${res.gameId}?role=gm`);
     });
