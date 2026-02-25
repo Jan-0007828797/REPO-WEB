@@ -453,7 +453,7 @@ export default function GamePage(){
             ) : (
               <div className="formRow stackConfirm">
                 <input
-                  className="inputBig"
+                  className="inputBig mlAmountInput"
                   inputMode="numeric"
                   placeholder="0"
                   maxLength={8}
@@ -814,26 +814,19 @@ export default function GamePage(){
             <div className="introBody">
               <TrendsPreviewCard
                 gs={gs}
-                onOpen={()=>setTab("trends")}
-                onOpenTrend={(t)=>setTrendModal(t)}
-                onOpenRegional={(t)=>setRegionalModal(t)}
-              />
-            </div>
-
-            <div className="introFooter">
-              <button
-                className="primaryBtn big full"
-                onClick={()=>{
+                openLabel="OK"
+                onOpen={()=>{
                   const y = Number(gs?.year || 1);
                   setMlTrendsDismissedYears((prev)=> prev.includes(y) ? prev : [...prev, y]);
                   setMlTrendsOpen(false);
                 }}
-              >
-                Rozumím
-              </button>
+                onOpenTrend={(t)=>setTrendModal(t)}
+                onOpenRegional={(t)=>setRegionalModal(t)}
+              />
             </div>
           </div>
         </div>
+      </div>
       ) : null}
 
       {/* GM quick CTA: zobrazí se až když všichni potvrdí ML obálku */}
@@ -1209,7 +1202,7 @@ function TrendsPanel({ gs, playerId, onOpenTrend, onOpenRegional, onRevealGlobal
   );
 }
 
-function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional }){
+function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional, openLabel="Všechny trendy" }){
   const y = gs?.year || 1;
   const data = gs?.trends?.byYear?.[String(y)];
 
@@ -1229,7 +1222,7 @@ function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional }){
           <div className="title">Trendy • Rok {y}</div>
           <div className="muted">nové aktivní trendy</div>
         </div>
-        <button className="ghostBtn" onClick={onOpen}>Všechny trendy</button>
+        <button className="ghostBtn" onClick={onOpen}>{openLabel}</button>
       </div>
 
       <div className="trendPreview">
