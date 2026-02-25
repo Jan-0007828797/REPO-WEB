@@ -38,8 +38,7 @@ function StepIcons({ phase, bizStep }){
     return null;
   }
   const steps = [
-    { key:"TRENDS", label:"Trendy", icon:"🗺️" },
-    { key:"ML_BID", label:"Market Leader", icon:"👑" },
+        { key:"ML_BID", label:"Market Leader", icon:"👑" },
     { key:"MOVE", label:"Investice", icon:"📍" },
     { key:"AUCTION_ENVELOPE", label:"Dražba", icon:"✉️" },
     { key:"ACQUIRE", label:"Akvizice", icon:"📷" },
@@ -63,8 +62,8 @@ function PrivacyCard({ kind, mode, amountText, onReveal, onHide, onClose }){
   const b = badgeFor(kind);
   if(mode==="edit") return null;
   return (
-    <div className="privacyWrap">
-      <div className="privacyCard">
+    <div className="privacyBackdrop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
+      <div className="privacyFull">
         <div className="privacyBadge">
           <span className="privacyEmoji">{b.emoji}</span>
           <span className="privacyLabel">{b.label}</span>
@@ -74,12 +73,12 @@ function PrivacyCard({ kind, mode, amountText, onReveal, onHide, onClose }){
         {mode==="hidden" ? (
           <>
             <div className="privacyHidden">🔒</div>
-            <button className="primaryBtn big" onClick={onReveal}>ODKRÝT</button>
+            <button className="primaryBtn big full" onClick={onReveal}>ODKRÝT</button>
           </>
         ) : (
           <>
             <div className="privacyAmount">{amountText}</div>
-            <button className="ghostBtn big" onClick={onHide}>SKRÝT</button>
+            <button className="secondaryBtn big full" onClick={onHide}>SKRÝT</button>
           </>
         )}
       </div>
@@ -102,6 +101,7 @@ export default function GamePage(){
   const [gs, setGs] = useState(null);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState(null);
+  const [gmPanelOpen, setGmPanelOpen] = useState(false);
   const [trendModal, setTrendModal] = useState(null); // {name, icon, desc}
   const [regionalModal, setRegionalModal] = useState(null); // {continent, name, icon, desc}
 
@@ -117,6 +117,14 @@ export default function GamePage(){
   const [cryptoOverlayOpen, setCryptoOverlayOpen] = useState(true);
   const [settleOverlayOpen, setSettleOverlayOpen] = useState(true);
 
+  // ML intro trends modal (opens automatically at start of each year in ML step)
+  const [mlTrendsOpen, setMlTrendsOpen] = useState(false);
+  const [mlTrendsDismissedYears, setMlTrendsDismissedYears] = useState([]); // number[]
+
+  // GM quick CTA when all players committed ML
+  const [gmCta, setGmCta] = useState(null); // {kind,label,cta,year}|null
+
+
   // inputs
   const [mlBid, setMlBid] = useState("");
   const [aucBid, setAucBid] = useState("");
@@ -124,6 +132,14 @@ export default function GamePage(){
   const [aucFinalBid, setAucFinalBid] = useState("");
 
   const [cryptoD, setCryptoD] = useState({ BTC:0, ETH:0, LTC:0, SIA:0 });
+
+  // Audit (SETTLE) UX state
+  const [auditPreview, setAuditPreview] = useState(null); // {settlementUsd, breakdown}
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [expertsOpen, setExpertsOpen] = useState(false);
+  const [expertPick, setExpertPick] = useState(null); // expert card
+  const [expertTarget, setExpertTarget] = useState(null); // playerId
+  const [expertCard, setExpertCard] = useState(null); // target investment cardId
 
   // Acquisition (scan) UI
   const [scanOn, setScanOn] = useState(false);
@@ -142,7 +158,13 @@ export default function GamePage(){
       setGs(state);
     };
     s.on("game_state", onState);
-    return ()=> s.off("game_state", onState);
+    const onGmCta = (msg)=>{
+      if(!msg || msg.gameId!==gameId) return;
+      setGmCta({ kind: msg.kind, label: msg.label, cta: msg.cta, year: msg.year });
+    };
+    s.on("gm_cta_ready", onGmCta);
+
+    return ()=>{ s.off("game_state", onState); s.off("gm_cta_ready", onGmCta); };
   }, [gameId]);
 
   const me = gs?.players?.find(p=>p.playerId===playerId) || null;
@@ -156,7 +178,7 @@ export default function GamePage(){
     if(!phase) { stopClock(); return; }
 
     const shouldClock =
-      (phase==="BIZ" && bizStep && bizStep!=="TRENDS") ||
+      (phase==="BIZ" && bizStep) ||
       (phase==="CRYPTO") ||
       (phase==="SETTLE");
 
@@ -174,15 +196,39 @@ export default function GamePage(){
     }
   }, [gs, playerId]);
 
+  // Load preview when entering SETTLE and not yet committed
+  useEffect(()=>{
+    if(gs?.phase!=="SETTLE") return;
+    const committed = !!gs?.settle?.entries?.[playerId]?.committed;
+    if(committed) return;
+    setAuditLoading(true);
+    s.emit("preview_audit", { gameId, playerId }, (res)=>{
+      setAuditLoading(false);
+      if(!res?.ok) setAuditPreview({ error: res?.error || "Chyba" });
+      else setAuditPreview({ settlementUsd: res.settlementUsd, breakdown: res.breakdown||[] });
+    });
+  }, [gs?.phase, gameId, playerId]);
+
   // Reset local states on step changes (so UX is clean)
   useEffect(()=>{
     const phase = gs?.phase;
     const step = gs?.bizStep;
+    const y = Number(gs?.year || 1);
+
     if(phase==="BIZ" && step==="ML_BID"){
       const committed = !!gs?.biz?.mlBids?.[playerId]?.committed;
       setMlPrivacy(committed ? "hidden" : "edit");
       setMlOverlayOpen(true);
+
+      // Auto-open "Aktuální trendy" na začátku roku (jen jednou za rok, dokud hráč nepotvrdí "Rozumím")
+      if(!mlTrendsDismissedYears.includes(y)){
+        setMlTrendsOpen(true);
+      }
+    } else {
+      // zavřít intro trendy mimo ML
+      setMlTrendsOpen(false);
     }
+
     if(phase==="BIZ" && step==="AUCTION_ENVELOPE"){
       const committed = !!gs?.biz?.auction?.entries?.[playerId]?.committed;
       setAucPrivacy(committed ? "hidden" : "edit");
@@ -199,13 +245,10 @@ export default function GamePage(){
       setSettleOverlayOpen(true);
     }
 
-    // Acquisition step: default scanner OFF, clear preview
-    if(phase==="BIZ" && step==="ACQUIRE"){
-      setScanOn(false);
-      setScanErr("");
-      setScanPreview(null);
-    }
+    // GM CTA reset: pokud se posuneme mimo ML nebo do dalšího roku, CTA smaž
+    if(step!=="ML_BID" || (gmCta && gmCta.year!==y)) setGmCta(null);
   }, [gs?.phase, gs?.bizStep, gs?.year]);
+
 
   // Acquisition scanner lifecycle
   useEffect(()=>{
@@ -364,7 +407,14 @@ export default function GamePage(){
             <div className="brand">KRYPTOPOLY</div>
             <div className="subBrand">{headerPhase}</div>
           </div>
-          {gs?.year ? <div className="yearPill">Rok {gs.year}</div> : null}
+          <div className="topHeaderRight">
+            {gs?.year ? <div className="yearPill">Rok {gs.year}</div> : null}
+            {isGM ? (
+              <button className="gmFab" onClick={()=>setGmPanelOpen(true)} aria-label="GM panel">
+                GM
+              </button>
+            ) : null}
+          </div>
         </div>
         <StepIcons phase={gs?.phase} bizStep={gs?.bizStep} />
       </div>
@@ -379,13 +429,6 @@ export default function GamePage(){
             <div style={{fontSize:28, fontWeight:900}}>Konec hry</div>
             <div className="muted">Díky za testování.</div>
           </div>
-        ) : gs.phase==="BIZ" && gs.bizStep==="TRENDS" ? (
-          <TrendsPreviewCard
-            gs={gs}
-            onOpen={()=>setTab("trends")}
-            onOpenTrend={(t)=>setTrendModal(t)}
-            onOpenRegional={(t)=>setRegionalModal(t)}
-          />
         ) : gs.phase==="BIZ" && gs.bizStep==="ML_BID" ? (
           <div className="card phaseCard">
             <div className="phaseHeader">
@@ -399,13 +442,28 @@ export default function GamePage(){
             </div>
 
             {/* golden rule: keep button styling (classes) identical; only change layout */}
-            <div className="formRow stackConfirm">
-              <input className="inputBig" inputMode="numeric" placeholder="0" value={mlBid} onChange={(e)=>setMlBid(e.target.value.replace(/[^\d]/g,""))} />
-              <button className="primaryBtn" onClick={()=>commitML(mlBid===""?0:Number(mlBid))}>Potvrdit</button>
-            </div>
-            <div className="ctaRow">
-              <button className="ghostBtn" onClick={()=>commitML(null)}>Nechci být ML</button>
-            </div>
+            {gs?.biz?.mlBids?.[playerId]?.committed ? (
+              <div className="lockedBlock">
+                <div className="lockedTitle">Rozhodnutí potvrzeno</div>
+                <div className="lockedSub">Volbu už nelze změnit. Můžeš ji pouze skrýt / odkrýt.</div>
+                <div className="lockedValue">
+                  {gs?.biz?.mlBids?.[playerId]?.amountUsd===null ? "Nechci být ML" : `${gs?.biz?.mlBids?.[playerId]?.amountUsd} USD`}
+                </div>
+              </div>
+            ) : (
+              <div className="formRow stackConfirm">
+                <input
+                  className="inputBig"
+                  inputMode="numeric"
+                  placeholder="0"
+                  maxLength={8}
+                  value={mlBid}
+                  onChange={(e)=>setMlBid(e.target.value.replace(/[^\d]/g,""))}
+                />
+                <button className="primaryBtn big full" onClick={()=>commitML(mlBid===""?0:Number(mlBid))}>Potvrdit</button>
+                <button className="secondaryBtn big full" onClick={()=>commitML(null)}>Nechci být ML</button>
+              </div>
+            )}
           </div>
         ) : gs.phase==="BIZ" && gs.bizStep==="MOVE" ? (
           <div className="card phaseCard">
@@ -467,6 +525,11 @@ export default function GamePage(){
                 const locked = !!lockedBy && lockedBy !== playerId;
                 const mine = myMove?.marketId === m.marketId;
                 const cls = kindOf(m);
+
+                // UX: When another player occupies a market, it becomes invisible to others (blank slot).
+                if(locked && !mine){
+                  return <div key={m.marketId} className={"marketCell hiddenSlot " + cls} aria-hidden="true" />;
+                }
                 return (
                   <button
                     key={m.marketId}
@@ -530,8 +593,8 @@ export default function GamePage(){
               <>
                 {/* golden rule: keep button styling (classes) identical; only change layout */}
                 <div className="formRow stackConfirm">
-                  <input className="inputBig" inputMode="numeric" placeholder="0" value={aucBid} onChange={(e)=>setAucBid(e.target.value.replace(/[^\d]/g,""))} />
-                  <button className="primaryBtn" onClick={()=>commitAuction(aucBid===""?0:Number(aucBid), useLobby)}>Potvrdit</button>
+                  <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucBid} onChange={(e)=>setAucBid(e.target.value.replace(/[^\d]/g,""))} />
+                  <button className="primaryBtn big full" onClick={()=>commitAuction(aucBid===""?0:Number(aucBid), useLobby)}>Potvrdit</button>
                 </div>
                 <div className="formRow">
                   <label className="checkRow">
@@ -539,7 +602,7 @@ export default function GamePage(){
                     <span>Použít lobbistu (pokud ho mám)</span>
                   </label>
                 </div>
-                <button className="ghostBtn" onClick={()=>commitAuction(null, false)}>Nechci dražit</button>
+                <button className="secondaryBtn big full" onClick={()=>commitAuction(null, false)}>Nechci dražit</button>
               </>
             ) : (
               <>
@@ -547,8 +610,8 @@ export default function GamePage(){
                   <div className="cardInner">
                     <div className="muted"><b>Poslední šance</b> – vidíš nabídky ostatních (mimo aplikaci si je ukážete). Zadej finální nabídku.</div>
                     <div className="formRow">
-                      <input className="inputBig" inputMode="numeric" placeholder="0" value={aucFinalBid} onChange={(e)=>setAucFinalBid(e.target.value.replace(/[^\d]/g,""))} />
-                      <button className="primaryBtn" onClick={()=>commitFinalAuction(aucFinalBid===""?0:Number(aucFinalBid))}>Odeslat</button>
+                      <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucFinalBid} onChange={(e)=>setAucFinalBid(e.target.value.replace(/[^\d]/g,""))} />
+                      <button className="primaryBtn big" onClick={()=>commitFinalAuction(aucFinalBid===""?0:Number(aucFinalBid))}>Odeslat</button>
                     </div>
                   </div>
                 ) : (
@@ -609,7 +672,13 @@ export default function GamePage(){
                   <div key={sym} className="cryptoRow">
                     <div className="cryptoMeta">
                       <div className="cryptoSym">{sym}</div>
-                      <div className="muted">{rate} USD/ks • Vlastním: <b>{owned}</b></div>
+                      <div className="cryptoMetaLine">
+                        <div className="muted">{rate} USD/ks</div>
+                        <div className="cryptoOwnedWrap">
+                          <div className="cryptoOwnedLabel">Vlastním</div>
+                          <div className="cryptoOwned">{owned}</div>
+                        </div>
+                      </div>
                     </div>
                     <div className="cryptoCtrls">
                       <button
@@ -654,35 +723,141 @@ export default function GamePage(){
               <div className="phaseLeft">
                 <div className="phaseIcon">🧾</div>
                 <div>
-                  <div className="phaseTitle">Audit</div>
-                  <div className="phaseSub">Aplikace zobrazí částku k vyrovnání. Ukazovací režim ukáže jen jedno číslo.</div>
+                  <div className="phaseTitle">{(() => {
+                    const all = gs?.players?.every(p=>gs?.settle?.entries?.[p.playerId]?.committed);
+                    return all ? "Finální audit" : "Audit";
+                  })()}</div>
+                  <div className="phaseSub">Nejdřív zafixuj audit. Pak můžeš povolat experty. Výsledek lze ukázat na celé obrazovce.</div>
                 </div>
               </div>
               <button className="ghostBtn" onClick={()=>setTab("accounting")}>Účetnictví</button>
             </div>
 
-            <div className="auditHero">
-              <div className="auditHeroTitle">Připrav se na uzavření roku</div>
-              <div className="auditHeroHint">Až GM potvrdí krok, ukáže se částka pro vyrovnání. Pak fyzicky zaplatíš / obdržíš USD.</div>
-            </div>
+            {(() => {
+              const entry = gs?.settle?.entries?.[playerId];
+              const committed = !!entry?.committed;
+              const allCommitted = gs?.players?.every(p=>gs?.settle?.entries?.[p.playerId]?.committed);
+              const view = committed ? entry : auditPreview;
+              const sum = view?.settlementUsd;
+              const breakdown = view?.breakdown || [];
+              const inv = gs?.inventory?.[playerId] || { experts:[] };
+              const usable = (inv.experts||[]).filter(e=>!e.used && (e.functionKey==="STEAL_BASE_PROD" || e.functionKey==="LAWYER_TRENDS"));
 
-            <button className="primaryBtn full" onClick={commitSettle}>Potvrdit připraven</button>
+              return (
+                <>
+                  <div className="auditBlock">
+                    {auditLoading && !committed ? (
+                      <div className="muted">Počítám…</div>
+                    ) : view?.error ? (
+                      <div className="muted">{view.error}</div>
+                    ) : (
+                      <>
+                        <div className="auditHeadline">
+                          <div className="auditHint">Souhrn (USD)</div>
+                          <div className={"auditSum "+((sum||0)>=0?"pos":"neg")}>{(sum||0)>=0?"+":""}{sum||0} USD</div>
+                        </div>
+                        <div className="auditTable">
+                          {breakdown.length ? breakdown.map((b,idx)=> (
+                            <div key={idx} className="auditRow">
+                              <div className="auditLbl">{b.label}</div>
+                              <div className={"auditVal "+(b.usd>0?"pos":b.usd<0?"neg":"neu")}>{b.usd>=0?"+":""}{b.usd} USD</div>
+                            </div>
+                          )) : <div className="muted">Rozpad není k dispozici.</div>}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {!committed ? (
+                    <div className="ctaRow">
+                      <button className="primaryBtn big full" onClick={commitSettle}>Zahájit audit</button>
+                      {usable.length ? (
+                        <button className="secondaryBtn big full" onClick={()=>setExpertsOpen(true)}>Povolat experty</button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      {!allCommitted ? (
+                        <div className="muted" style={{marginTop:10}}>Čekám na ostatní hráče…</div>
+                      ) : (
+                        <div className="ctaRow">
+                          {usable.length ? (
+                            <button className="secondaryBtn big full" onClick={()=>setExpertsOpen(true)}>Povolat experty</button>
+                          ) : null}
+                          <button className="primaryBtn big full" onClick={()=>{ setSettleOverlayOpen(true); setSettlePrivacy("reveal"); }}>Potvrdit audit (ukázat)</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         ) : (
           <div className="card">
             <div className="muted">Čekám na GM…</div>
           </div>
         )}
-
-        {isGM && gs?.status==="IN_PROGRESS" ? (
-          <div className="gmBar">
-            <button className="ghostBtn" onClick={gmBack}>← Zpět</button>
-            <button className="primaryBtn" onClick={gmNext}>Další krok →</button>
-          </div>
-        ) : null}
       </div>
 
-      <BottomBar onTab={setTab} />
+      <BottomBar onTab={setTab} active={tab} />
+
+      {/* ML intro: Aktuální trendy (otevře se na začátku ML každého roku) */}
+      {mlTrendsOpen && gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" ? (
+        <div className="introBackdrop">
+          <div className="introModal">
+            <div className="introHeader">
+              <div className="introTitle">Aktuální trendy</div>
+              <div className="introSub">Přečti si dopady trendů pro tento rok. Detail otevřeš kliknutím na kartu.</div>
+            </div>
+
+            <div className="introBody">
+              <TrendsPreviewCard
+                gs={gs}
+                onOpen={()=>setTab("trends")}
+                onOpenTrend={(t)=>setTrendModal(t)}
+                onOpenRegional={(t)=>setRegionalModal(t)}
+              />
+            </div>
+
+            <div className="introFooter">
+              <button
+                className="primaryBtn big full"
+                onClick={()=>{
+                  const y = Number(gs?.year || 1);
+                  setMlTrendsDismissedYears((prev)=> prev.includes(y) ? prev : [...prev, y]);
+                  setMlTrendsOpen(false);
+                }}
+              >
+                Rozumím
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* GM quick CTA: zobrazí se až když všichni potvrdí ML obálku */}
+      {isGM && gmCta?.kind==="ML_ALL_COMMITTED" && gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" ? (
+        <div className="gmQuickCta">
+          <div className="gmQuickText">{gmCta.label || "Všichni potvrdili"}</div>
+          <button className="primaryBtn big" onClick={()=>{ gmNext(); setGmCta(null); }}>
+            {gmCta.cta || "Pokračovat"}
+          </button>
+        </div>
+      ) : null}
+
+
+      {gmPanelOpen && isGM && gs?.status==="IN_PROGRESS" ? (
+        <Modal title="GM panel" onClose={()=>setGmPanelOpen(false)} variant="top">
+          <div className="gmPanel">
+            <div className="muted" style={{marginBottom:12}}>Ovládání fází (pouze GM). Nemá rušit hráče.</div>
+            <div className="ctaRow">
+              <button className="secondaryBtn big full" onClick={()=>{ gmBack(); setGmPanelOpen(false); }}>← Zpět</button>
+              <button className="primaryBtn big full" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Další krok →</button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
 
       {/* Acquisition: scanned card confirmation (always top) */}
       {scanPreview?.card ? (
@@ -769,14 +944,8 @@ export default function GamePage(){
       ) : null}
 
       {tab==="assets" ? (
-        <Modal title="Aktiva" onClose={()=>setTab(null)}>
-          <AssetsPanel inv={myInv} />
-        </Modal>
-      ) : null}
-
-      {tab==="experts" ? (
-        <Modal title="Experti" onClose={()=>setTab(null)}>
-          <ExpertsPanel inv={myInv} />
+        <Modal title="Karty" onClose={()=>setTab(null)}>
+          <CardsPanel inv={myInv} />
         </Modal>
       ) : null}
 
@@ -784,6 +953,102 @@ export default function GamePage(){
         <Modal title="Účetnictví" onClose={()=>setTab(null)}>
           <AccountingPanel gs={gs} playerId={playerId} gameId={gameId} />
         </Modal>
+      ) : null}
+
+      {expertsOpen && gs?.phase==="SETTLE" ? (
+        <SuperTopModal title="Povolat experty" onClose={()=>{ setExpertsOpen(false); setExpertPick(null); setExpertTarget(null); setExpertCard(null); }}>
+          {(() => {
+            const inv = gs?.inventory?.[playerId] || { experts:[] };
+            const usable = (inv.experts||[]).filter(e=>!e.used && (e.functionKey==="STEAL_BASE_PROD" || e.functionKey==="LAWYER_TRENDS"));
+            const others = (gs?.players||[]).filter(p=>p.playerId!==playerId && p.role!=="GM");
+
+            function applySteal(){
+              const effect = { type:"STEAL_BASE_PRODUCTION", targetPlayerId: expertTarget, cardId: expertCard };
+              s.emit("apply_expert_effect", { gameId, playerId, effect }, (res)=>{
+                if(!res?.ok) alert(res?.error || "Chyba");
+                else {
+                  setExpertsOpen(false);
+                  setExpertPick(null); setExpertTarget(null); setExpertCard(null);
+                }
+              });
+            }
+
+            const step = !expertPick ? 1 : (expertPick.functionKey==="STEAL_BASE_PROD" ? (!expertTarget ? 2 : !expertCard ? 3 : 4) : 9);
+
+            return (
+              <div className="expertModal">
+                {!usable.length ? (
+                  <div className="muted">Nemáš žádného použitelného experta.</div>
+                ) : null}
+
+                {!expertPick ? (
+                  <div className="cardsGrid" style={{marginTop:6}}>
+                    {usable.map(e=>{
+                      const icon = e.functionKey==="STEAL_BASE_PROD" ? "🕴️" : "⚖️";
+                      return (
+                        <button key={e.cardId} className="expertPickTile" onClick={()=>setExpertPick(e)}>
+                          <div className="tileIcon">{icon}</div>
+                          <div className="tileMeta">
+                            <div className="tileTitle">{e.functionLabel}</div>
+                            <div className="tileSub">{e.functionDesc}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : expertPick.functionKey==="LAWYER_TRENDS" ? (
+                  <div className="cardInner">
+                    <div className="secTitle">Právník</div>
+                    <div className="muted" style={{marginTop:6}}>
+                      Právníka v této verzi používáš v detailu trendu (ochrana proti trendům). V auditu se jen připomíná, že ho máš k dispozici.
+                    </div>
+                    <button className="secondaryBtn big full" onClick={()=>{ setExpertPick(null); }}>Zpět</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="secTitle">{expertPick.functionLabel}</div>
+                    <div className="muted" style={{marginTop:6}}>Vyber hráče a jeho investici. Efekt se započítá do finálního auditu.</div>
+
+                    {!expertTarget ? (
+                      <div className="list" style={{marginTop:10}}>
+                        {others.length ? others.map(p=>(
+                          <button key={p.playerId} className="listItem clickable" onClick={()=>setExpertTarget(p.playerId)}>
+                            <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+                              <div><b>{p.name||"Hráč"}</b></div>
+                              <div className="pill">vybrat</div>
+                            </div>
+                          </button>
+                        )) : <div className="muted">Žádní další hráči.</div>}
+                      </div>
+                    ) : !expertCard ? (
+                      <div className="list" style={{marginTop:10}}>
+                        {(gs?.inventory?.[expertTarget]?.investments||[]).map(c=>(
+                          <button key={c.cardId} className="listItem clickable" onClick={()=>setExpertCard(c.cardId)}>
+                            <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+                              <div><b>{c.cardId}</b> • {c.name}</div>
+                              <div className="pill">+{c.usdProduction} USD</div>
+                            </div>
+                            <div className="muted">{c.continent} • {c.type}</div>
+                          </button>
+                        ))}
+                        <button className="secondaryBtn big full" onClick={()=>{ setExpertTarget(null); }}>Změnit hráče</button>
+                      </div>
+                    ) : (
+                      <div className="ctaRow" style={{marginTop:12}}>
+                        <button className="primaryBtn big full" onClick={applySteal}>ANO – aplikovat</button>
+                        <button className="secondaryBtn big full" onClick={()=>{ setExpertPick(null); setExpertTarget(null); setExpertCard(null); }}>NE – zrušit</button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {expertPick ? (
+                  <div className="muted" style={{marginTop:10}}>Krok {step}/4</div>
+                ) : null}
+              </div>
+            );
+          })()}
+        </SuperTopModal>
       ) : null}
 
       {tab==="status" ? (
@@ -875,6 +1140,16 @@ function TrendsPanel({ gs, playerId, onOpenTrend, onOpenRegional, onRevealGlobal
   const analystLeft = inv.experts.filter(e=>e.functionKey==="ANALYST" && !e.used).length;
   const guruLeft = inv.experts.filter(e=>e.functionKey==="CRYPTOGURU" && !e.used).length;
 
+  const regCls = (t)=>{
+    const k = String(t?.key||"");
+    const n = String(t?.name||"").toLowerCase();
+    if(k.includes("REG_INVESTMENT_BOOM") || n.includes("boom")) return "reg boom";
+    if(k.includes("REG_HIGH_EDUCATION") || n.includes("vzdělan") || n.includes("vzdelan") ) return "reg edu";
+    if(k.includes("REG_STABILITY") || n.includes("stabil")) return "reg stable";
+    if(k.includes("REG_TAXES") || n.includes("dan")) return "reg tax";
+    return "reg";
+  };
+
   return (
     <div>
       <div className="muted" style={{marginBottom:10}}>
@@ -920,7 +1195,7 @@ function TrendsPanel({ gs, playerId, onOpenTrend, onOpenRegional, onRevealGlobal
                       <div className="regName">{t.continent}</div>
                       <div className="regCont muted">{t.name}</div>
                     </div>
-                    <button className="regSymBtn" onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
+                    <button className={"regSymBtn "+regCls(t)} onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
                       <span className="regSymIcon">{t.icon || "📍"}</span>
                     </button>
                   </div>
@@ -937,6 +1212,16 @@ function TrendsPanel({ gs, playerId, onOpenTrend, onOpenRegional, onRevealGlobal
 function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional }){
   const y = gs?.year || 1;
   const data = gs?.trends?.byYear?.[String(y)];
+
+  const regCls = (t)=>{
+    const k = String(t?.key||"");
+    const n = String(t?.name||"").toLowerCase();
+    if(k.includes("REG_INVESTMENT_BOOM") || n.includes("boom")) return "reg boom";
+    if(k.includes("REG_HIGH_EDUCATION") || n.includes("vzdělan") || n.includes("vzdelan")) return "reg edu";
+    if(k.includes("REG_STABILITY") || n.includes("stabil")) return "reg stable";
+    if(k.includes("REG_TAXES") || n.includes("dan")) return "reg tax";
+    return "reg";
+  };
   return (
     <div className="card">
       <div className="titleRow">
@@ -973,7 +1258,7 @@ function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional }){
             {Object.values(data?.regional||{}).map(t=>(
               <div key={t.trendId} className="regionalDot">
                 <span>{t.continent}</span>
-                <button className="regSymBtn" onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
+                <button className={"regSymBtn "+regCls(t)} onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
                   <span className="regSymIcon">{t.icon || "📍"}</span>
                 </button>
               </div>
@@ -1017,7 +1302,6 @@ function CryptoTrendCard({ revealed, crypto }){
             <div key={c} className={"cryptoRow "+a.cls}>
               <div className="coin">{c}</div>
               <div className="arrow">{a.sym}</div>
-              <div className="coef">×{k}</div>
             </div>
           );
         })}
@@ -1087,6 +1371,102 @@ function AssetsPanel({ inv }){
             <div className="muted">{c.crypto} • +{c.cryptoProduction} ks/rok • elektřina {c.electricityUSD} USD</div>
           </div>
         )) : <div className="muted">Zatím žádné.</div>}
+      </div>
+    </div>
+  );
+}
+
+function CardsPanel({ inv }){
+  const investments = inv?.investments || [];
+  const miningFarms = inv?.miningFarms || [];
+  const experts = inv?.experts || [];
+
+  const iconFor = (kind, item) => {
+    if(kind==="INVESTMENT"){
+      const t = String(item?.type||"").toUpperCase();
+      if(t.includes("AGRO")) return "🌿";
+      if(t.includes("MINING")) return "⛏️";
+      if(t.includes("INDUSTRY")) return "🏭";
+      if(t.includes("TECH")) return "🧠";
+      if(t.includes("LOGISTICS")) return "🚚";
+      if(t.includes("ENERGY")) return "⚡";
+      return "📈";
+    }
+    if(kind==="MINING_FARM") return "⚙️";
+    if(kind==="EXPERT"){
+      const k = String(item?.functionKey||"");
+      if(k.includes("LAWYER")) return "⚖️";
+      if(k.includes("LOBBY") || k.includes("STEAL")) return "🕴️";
+      if(k.includes("ANALYST")) return "🔎";
+      if(k.includes("CRYPTO")) return "🧬";
+      return "🧑‍💼";
+    }
+    return "🃏";
+  };
+
+  return (
+    <div className="cardsPanel">
+      <div className="cardsSection">
+        <div className="secTitle">Tradiční investice</div>
+        <div className="cardsGrid">
+          {investments.length ? investments.map(c=> (
+            <div key={c.cardId} className="cardTile">
+              <div className="tileTop">
+                <div className="tileIcon">{iconFor("INVESTMENT", c)}</div>
+                <div className="tileMeta">
+                  <div className="tileTitle">{c.name}</div>
+                  <div className="tileSub">{c.continent} • {c.type}</div>
+                </div>
+              </div>
+              <div className="tileBottom">
+                <div className="tileId">{c.cardId}</div>
+                <div className="tileVal">+{c.usdProduction} USD/rok</div>
+              </div>
+            </div>
+          )) : <div className="muted">Zatím žádné.</div>}
+        </div>
+      </div>
+
+      <div className="cardsSection">
+        <div className="secTitle">Mining farmy</div>
+        <div className="cardsGrid">
+          {miningFarms.length ? miningFarms.map(c=> (
+            <div key={c.cardId} className="cardTile">
+              <div className="tileTop">
+                <div className="tileIcon">{iconFor("MINING_FARM", c)}</div>
+                <div className="tileMeta">
+                  <div className="tileTitle">{c.name}</div>
+                  <div className="tileSub">{c.crypto} • +{c.cryptoProduction} ks/rok</div>
+                </div>
+              </div>
+              <div className="tileBottom">
+                <div className="tileId">{c.cardId}</div>
+                <div className="tileVal neg">−{c.electricityUSD} USD elektřina</div>
+              </div>
+            </div>
+          )) : <div className="muted">Zatím žádné.</div>}
+        </div>
+      </div>
+
+      <div className="cardsSection">
+        <div className="secTitle">Experti</div>
+        <div className="cardsGrid">
+          {experts.length ? experts.map(e=> (
+            <div key={e.cardId} className={"cardTile"+(e.used?" used":"")}> 
+              <div className="tileTop">
+                <div className="tileIcon">{iconFor("EXPERT", e)}</div>
+                <div className="tileMeta">
+                  <div className="tileTitle">{e.functionLabel}</div>
+                  <div className="tileSub">{e.functionDesc}</div>
+                </div>
+              </div>
+              <div className="tileBottom">
+                <div className="tileId">{e.cardId}</div>
+                <div className={"pill"+(e.used?" dim":"")}>{e.used?"použito":"k dispozici"}</div>
+              </div>
+            </div>
+          )) : <div className="muted">Zatím žádní.</div>}
+        </div>
       </div>
     </div>
   );

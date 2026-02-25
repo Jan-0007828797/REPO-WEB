@@ -19,20 +19,33 @@ export function Modal({title,onClose,children,variant}){
 export function BottomBar({onTab, active}){
   return (
     <div className="bottomBar">
-      <button className={"tabBtn"+(active==="accounting"?" active":"")} onClick={()=>onTab("accounting")} aria-label="Účetnictví">
-        <span className="tabIcon" aria-hidden="true">🧾</span>
-        <span className="tabLabel">Účet</span>
+      <button className={"tabBtn"+(active==="accounting"?" active":"")} onClick={()=>onTab("accounting")} aria-label="Účetnictví / Finance">
+        <span className="tabIcon tabChar" aria-hidden="true">$</span>
+        <span className="tabLabel">Finance</span>
       </button>
-      <button className={"tabBtn"+(active==="assets"?" active":"")} onClick={()=>onTab("assets")} aria-label="Aktiva">
-        <span className="tabIcon" aria-hidden="true">🏭</span>
-        <span className="tabLabel">Aktiva</span>
+
+      <button className={"tabBtn"+(active==="assets"?" active":"")} onClick={()=>onTab("assets")} aria-label="Karty">
+        <span className="tabIcon" aria-hidden="true">
+          <svg className="tabSvg" viewBox="0 0 64 64" role="img" aria-label="Karta s QR kódem">
+            <rect x="10" y="12" width="44" height="40" rx="8" ry="8" fill="none" stroke="currentColor" strokeWidth="4" />
+            <rect x="18" y="20" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="4" />
+            <rect x="36" y="20" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="4" />
+            <rect x="18" y="38" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="4" />
+            <path d="M36 38h10M36 48h10M46 38v10" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+          </svg>
+        </span>
+        <span className="tabLabel">Karty</span>
       </button>
-      <button className={"tabBtn"+(active==="experts"?" active":"")} onClick={()=>onTab("experts")} aria-label="Experti">
-        <span className="tabIcon" aria-hidden="true">🧑‍💼</span>
-        <span className="tabLabel">Experti</span>
-      </button>
+
       <button className={"tabBtn"+(active==="trends"?" active":"")} onClick={()=>onTab("trends")} aria-label="Trendy">
-        <span className="tabIcon" aria-hidden="true">🌐</span>
+        <span className="tabIcon" aria-hidden="true">
+          <svg className="tabSvg" viewBox="0 0 64 64" role="img" aria-label="Zeměkoule">
+            <circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" strokeWidth="4" />
+            <path d="M12 32h40" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+            <path d="M32 12c7 7 7 33 0 40" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+            <path d="M32 12c-7 7-7 33 0 40" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+          </svg>
+        </span>
         <span className="tabLabel">Trendy</span>
       </button>
     </div>
