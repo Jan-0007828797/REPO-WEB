@@ -826,7 +826,6 @@ export default function GamePage(){
             </div>
           </div>
         </div>
-      </div>
       ) : null}
 
       {/* GM quick CTA: zobrazí se až když všichni potvrdí ML obálku */}
