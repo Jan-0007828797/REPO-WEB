@@ -5,27 +5,67 @@ import { useParams, useRouter } from "next/navigation";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { getSocket } from "../../../lib/socket";
 import { loadPlayerId } from "../../../lib/storage";
-import { playRing, stopRing } from "../../../lib/audio";
+import { playClock, stopClock, playRing, stopRing } from "../../../lib/audio";
 import { BottomBar, Modal } from "../../ui";
 
-const PHASES = [
-  { key:"ML", label:"Market Leader", icon:"👑" },
-  { key:"MARKET_PICK", label:"Výběr trhu", icon:"📍" },
-  { key:"AUCTION", label:"Dražba", icon:"🔒" },
-  { key:"ACQUIRE", label:"Akvizice", icon:"📷" },
-  { key:"EXCHANGE", label:"Kryptoburza", icon:"💱" },
-  { key:"AUDIT", label:"Audit", icon:"🧾" },
-];
+function SuperTopModal({ title, onClose, children }){
+  // Same behavior/markup as Modal, but guaranteed above other modals.
+  useEffect(()=>{ const onKey=(e)=>{ if(e.key==="Escape") onClose?.(); }; window.addEventListener("keydown", onKey); return ()=>window.removeEventListener("keydown", onKey); },[onClose]);
+  return (
+    <div className="modalBackdrop top superTop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
+      <div className="modal">
+        <div className="modalHeader">
+          <div style={{fontWeight:900,fontSize:18}}>{title}</div>
+          <button className="iconBtn" onClick={onClose}>✕</button>
+        </div>
+        <div style={{height:1,background:"rgba(255,255,255,.10)",margin:"12px 0"}}></div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
-function PhaseBar({ phase }){
+function badgeFor(kind){
+  if(kind==="ML") return { emoji:"🟩", label:"MARKET LEADER" };
+  if(kind==="AUCTION") return { emoji:"🟨", label:"DRAŽBA – OBÁLKA" };
+  if(kind==="CRYPTO") return { emoji:"🟦", label:"KRYPTOTRANSAKCE" };
+  if(kind==="SETTLE") return { emoji:"🟥", label:"AUDIT" };
+  return { emoji:"", label:"" };
+}
+
+
+function StepIcons({ phase, bizStep }){
+  // Fixed screens (phases) – change only when GM advances.
+  const activeKey = (() => {
+    if(phase==="BIZ"){
+      if(bizStep==="ML_BID") return "ML";
+      if(bizStep==="MOVE") return "MOVE";
+      if(bizStep==="AUCTION_ENVELOPE") return "AUCTION";
+      if(bizStep==="ACQUIRE") return "ACQUIRE";
+      return "ML";
+    }
+    if(phase==="CRYPTO") return "CRYPTO";
+    if(phase==="SETTLE") return "AUDIT";
+    return null;
+  })();
+
+  const steps = [
+    { key:"ML", label:"Market Leader", icon:"👑" },
+    { key:"MOVE", label:"Výběr trhu", icon:"📍" },
+    { key:"AUCTION", label:"Dražba", icon:"✉️" },
+    { key:"ACQUIRE", label:"Akvizice", icon:"📷" },
+    { key:"CRYPTO", label:"Kryptoburza", icon:"₿" },
+    { key:"AUDIT", label:"Audit", icon:"🧾" },
+  ];
+
   return (
     <div className="stepRow">
-      {PHASES.map(p=>{
-        const active = p.key===phase;
+      {steps.map(s=>{
+        const active = s.key===activeKey;
         return (
-          <div key={p.key} className={"step"+(active?" active":"")}>
-            <div className="stepIcon">{p.icon}</div>
-            <div className="stepLabel">{p.label}</div>
+          <div key={s.key} className={"stepChip"+(active?" active":"")}>
+            <span className="stepIcon">{s.icon}</span>
+            <span className="stepText">{s.label}</span>
           </div>
         );
       })}
@@ -33,564 +73,1568 @@ function PhaseBar({ phase }){
   );
 }
 
-function groupMarkets(options, continentOrder){
-  const byCont = {};
-  for(const c of continentOrder) byCont[c]=[];
-  for(const m of options){
-    if(!byCont[m.continent]) byCont[m.continent]=[];
-    byCont[m.continent].push(m);
-  }
-  // sort within continent by type order: AGRO, MINING, INDUSTRY (to match colors grouping feel)
-  const typeOrder = { AGRO:1, MINING:2, INDUSTRY:3 };
-  for(const c of Object.keys(byCont)){
-    byCont[c].sort((a,b)=>(typeOrder[a.marketType]||9)-(typeOrder[b.marketType]||9));
-  }
-  return byCont;
+
+function PrivacyCard({ kind, mode, amountText, onReveal, onHide, onClose }){
+  const b = badgeFor(kind);
+  if(mode==="edit") return null;
+  return (
+    <div className="privacyBackdrop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
+      <div className="privacyFull">
+        <div className="privacyBadge">
+          <span className="privacyEmoji">{b.emoji}</span>
+          <span className="privacyLabel">{b.label}</span>
+          <button className="privacyClose" onClick={onClose} aria-label="Zavřít">✕</button>
+        </div>
+
+        {mode==="hidden" ? (
+          <>
+            <div className="privacyHidden">🔒</div>
+            <button className="primaryBtn big full" onClick={onReveal}>ODKRÝT</button>
+          </>
+        ) : (
+          <>
+            <div className="privacyAmount">{amountText}</div>
+            <button className="secondaryBtn big full" onClick={onHide}>SKRÝT</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function formatCont(c){
-  const map = { S_AMERICA:"SA", N_AMERICA:"JA", EUROPE:"EVR", AFRICA:"AFR", ASIA:"ASIE", OCEANIA:"OCEANIE" };
-  return map[c]||c;
-}
-function formatType(t){
-  const map = { AGRO:"Zemědělství", MINING:"Těžba", INDUSTRY:"Průmysl" };
-  return map[t]||t;
+function pickBackCamera(devices = []) {
+  const byLabel = devices.find((d) => /back|rear|environment/i.test(d.label || ""));
+  if (byLabel) return byLabel;
+  return devices[devices.length - 1] || null;
 }
 
-export default function Game(){
+export default function GamePage(){
   const { gameId } = useParams();
-  const r = useRouter();
-  const [sock,setSock]=useState(null);
-  const [playerId,setPlayerId]=useState("");
-  const [state,setState]=useState(null);
-  const [gmState,setGmState]=useState(null);
+  const router = useRouter();
+  const playerId = useMemo(()=> (typeof window==="undefined" ? "" : loadPlayerId()), []);
+  // Socket must be initialized before any hooks that reference it (dependency arrays are evaluated during render).
+  const s = useMemo(()=> getSocket(), []);
+  const [gs, setGs] = useState(null);
+  const [err, setErr] = useState("");
+  const [tab, setTab] = useState(null);
+  const [gmPanelOpen, setGmPanelOpen] = useState(false);
+  const [trendModal, setTrendModal] = useState(null); // {name, icon, desc}
+  const [regionalModal, setRegionalModal] = useState(null);
+  const [mlIntroOpen, setMlIntroOpen] = useState(false);
+  const mlIntroYearRef = useRef(null);
 
-  const [activeTab,setActiveTab]=useState(null); // wallet | cards | trends
-  const [trendModalOpen,setTrendModalOpen]=useState(false);
+  const [gmReadyOpen, setGmReadyOpen] = useState(false);
+  const gmReadyKeyRef = useRef("");
 
-  // MARKET PICK
-  const [marketOptions,setMarketOptions]=useState([]);
-  const [continentOrder,setContinentOrder]=useState(["S_AMERICA","N_AMERICA","EUROPE","AFRICA","ASIA","OCEANIA"]);
-  const [confirmMarket,setConfirmMarket]=useState(null);
+  // Auction lobbyist intel (private)
+  const [aucIntel, setAucIntel] = useState(null); // {intel:[{playerId,name,bidUsd}]}
 
-  // AUCTION
-  const [auctionBid,setAuctionBid]=useState("");
-  const [auctionPass,setAuctionPass]=useState(false);
-  const [auctionLobbyist,setAuctionLobbyist]=useState(false);
-  const [intelOpen,setIntelOpen]=useState(false);
-  const [intelOffers,setIntelOffers]=useState([]);
+  // Acquire finish prompt
+  const [acqMoreOpen, setAcqMoreOpen] = useState(false);
+ // {continent, name, icon, desc}
 
-  // ACQUIRE / SCAN
-  const [scanOpen,setScanOpen]=useState(false);
-  const [scanErr,setScanErr]=useState("");
-  const [scanCard,setScanCard]=useState(null);
-  const [moreModal,setMoreModal]=useState(false);
-  const scannerRef = useRef(null);
-  const readerRef = useRef(null);
+  // local privacy modes
+  const [mlPrivacy, setMlPrivacy] = useState("edit");       // edit|hidden|reveal
+  const [aucPrivacy, setAucPrivacy] = useState("edit");
+  const [cryptoPrivacy, setCryptoPrivacy] = useState("edit");
+  const [settlePrivacy, setSettlePrivacy] = useState("edit");
 
-  // EXCHANGE
-  const [pending,setPending]=useState({ BTC:0, ETH:0, LTC:0, SIA:0 });
-  const [pendingErr,setPendingErr]=useState("");
+  // overlay visibility (so GM controls stay usable and players can dismiss overlays)
+  const [mlOverlayOpen, setMlOverlayOpen] = useState(true);
+  const [aucOverlayOpen, setAucOverlayOpen] = useState(true);
+  const [cryptoOverlayOpen, setCryptoOverlayOpen] = useState(true);
+  const [settleOverlayOpen, setSettleOverlayOpen] = useState(true);
 
-  // AUDIT
-  const [auditPreview,setAuditPreview]=useState(null);
-  const [auditFinal,setAuditFinal]=useState(null);
-  const [auditMsg,setAuditMsg]=useState("");
-  const [lawyerOpen,setLawyerOpen]=useState(false);
-  const [lobbyOpen,setLobbyOpen]=useState(false);
-  const [lobbyAction,setLobbyAction]=useState(null); // STEAL | SABOTAGE
+  // inputs
+  const [mlBid, setMlBid] = useState("");
+  const [aucBid, setAucBid] = useState("");
+  const [useLobby, setUseLobby] = useState(false);
+  const [aucFinalBid, setAucFinalBid] = useState("");
 
-  const pub = state?.public;
-  const my = state?.my;
+  const [cryptoD, setCryptoD] = useState({ BTC:0, ETH:0, LTC:0, SIA:0 });
 
-  const isGM = my?.role==="GM";
+  // Audit (SETTLE) UX state
+  const [auditPreview, setAuditPreview] = useState(null); // {settlementUsd, breakdown}
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [expertsOpen, setExpertsOpen] = useState(false);
+  const [expertPick, setExpertPick] = useState(null); // expert card
+  const [expertTarget, setExpertTarget] = useState(null); // playerId
+  const [expertCard, setExpertCard] = useState(null); // target investment cardId
+
+  // Acquisition (scan) UI
+  const [scanOn, setScanOn] = useState(false);
+  const [scanErr, setScanErr] = useState("");
+  const [scanPreview, setScanPreview] = useState(null); // {card}
+  const videoRef = useRef(null);
+  const codeReader = useMemo(()=> new BrowserMultiFormatReader(), []);
 
   useEffect(()=>{
-    const pid = loadPlayerId();
-    if(pid) setPlayerId(pid);
-    const s = getSocket();
-    setSock(s);
 
-    const onSync=(payload)=>{ if(payload?.public?.gameId!==gameId) return; setState(payload); };
-    const onGm=(p)=>{ setGmState(p); };
-    const onIntel=(p)=>{
-      setIntelOffers(p?.offers||[]);
-      setIntelOpen(true);
-      // best-effort ring
-      try{ playRing(); }catch{}
+    s.emit("watch_game", { gameId, playerId }, (res)=>{
+      if(!res?.ok) setErr(res?.error || "Nelze načíst hru.");
+    });
+    const onState = (state)=>{
+      if(state?.gameId!==gameId) return;
+      setGs(state);
     };
-    const onAuditFinal=(p)=>{
-      setAuditFinal(p);
-      setAuditMsg("Finální audit připraven. Zkontroluj a potvrď.");
+    const onIntel = (payload)=>{
+      if(payload?.gameId!==gameId) return;
+      // Private lobbyist intel – open modal (privacy preserved)
+      setAucIntel({ intel: payload.intel || [] });
+      playRing();
     };
-    s.on("state_sync", onSync);
-    s.on("gm_state", onGm);
-    s.on("auction_intel_notify", onIntel);
-    s.on("audit_final_ready", onAuditFinal);
+    s.on("auction_intel", onIntel);
 
-    // subscribe
-    if(pid) s.emit("watch_game",{ gameId, playerId: pid },()=>{});
-    else {
-      // fallback – redirect to join
-      r.push(`/join/${gameId}`);
+    s.on("game_state", onState);
+    return ()=>{ s.off("game_state", onState); s.off("auction_intel", onIntel); };
+  }, [gameId]);
+
+  const me = gs?.players?.find(p=>p.playerId===playerId) || null;
+  const isGM = me?.role==="GM";
+  // Market Leader screen starts with Trends intro popup (can be closed).
+  useEffect(()=>{
+    if(!gs?.year) return;
+    if(gs?.phase!=="BIZ" || gs?.bizStep!=="ML_BID") return;
+    if(mlIntroYearRef.current === gs.year) return;
+    mlIntroYearRef.current = gs.year;
+    setMlIntroOpen(true);
+  }, [gs?.phase, gs?.bizStep, gs?.year]);
+
+
+  // Sound logic: clock during interactive steps (except Trends)
+  useEffect(()=>{
+    stopRing();
+    const phase = gs?.phase;
+    const bizStep = gs?.bizStep;
+    if(!phase) { stopClock(); return; }
+
+    const shouldClock =
+      (phase==="BIZ" && bizStep && bizStep!=="TRENDS") ||
+      (phase==="CRYPTO") ||
+      (phase==="SETTLE");
+
+    if(shouldClock) playClock(); else stopClock();
+
+    // lobbyist ringing: only for players who received private intel and have not sent final bid
+    if(phase==="BIZ" && bizStep==="AUCTION_ENVELOPE"){
+      const entry = gs?.biz?.auction?.entries?.[playerId];
+      if(aucIntel && entry?.usedLobbyist && !entry?.finalCommitted){
+        playRing();
+      }else{
+        stopRing();
+      }
+    }
+  }, [gs, playerId, aucIntel]);
+
+  // Load preview when entering SETTLE and not yet committed
+  useEffect(()=>{
+    if(gs?.phase!=="SETTLE") return;
+    const committed = !!gs?.settle?.entries?.[playerId]?.committed;
+    if(committed) return;
+    setAuditLoading(true);
+    s.emit("preview_audit", { gameId, playerId }, (res)=>{
+      setAuditLoading(false);
+      if(!res?.ok) setAuditPreview({ error: res?.error || "Chyba" });
+      else setAuditPreview({ settlementUsd: res.settlementUsd, breakdown: res.breakdown||[] });
+    });
+  }, [gs?.phase, gameId, playerId]);
+
+  // Reset local states on step changes (so UX is clean)
+  useEffect(()=>{
+    const phase = gs?.phase;
+    const step = gs?.bizStep;
+    if(phase==="BIZ" && step==="ML_BID"){
+      const committed = !!gs?.biz?.mlBids?.[playerId]?.committed;
+      setMlPrivacy(committed ? "hidden" : "edit");
+      setMlOverlayOpen(true);
+    }
+    if(phase==="BIZ" && step==="AUCTION_ENVELOPE"){
+      const committed = !!gs?.biz?.auction?.entries?.[playerId]?.committed;
+      setAucPrivacy(committed ? "hidden" : "edit");
+      setAucOverlayOpen(true);
+    }
+    if(phase==="CRYPTO"){
+      const committed = !!gs?.crypto?.entries?.[playerId]?.committed;
+      setCryptoPrivacy(committed ? "hidden" : "edit");
+      setCryptoOverlayOpen(true);
+    }
+    if(phase==="SETTLE"){
+      const committed = !!gs?.settle?.entries?.[playerId]?.committed;
+      setSettlePrivacy(committed ? "hidden" : "edit");
+      setSettleOverlayOpen(true);
     }
 
-    return ()=>{
-      s.off("state_sync", onSync);
-      s.off("gm_state", onGm);
-      s.off("auction_intel_notify", onIntel);
-      s.off("audit_final_ready", onAuditFinal);
-      try{ stopRing(); }catch{}
-    };
-  },[gameId,r]);
-
-  // Trend popup open on entering ML
-  useEffect(()=>{
-    if(pub?.phase==="ML"){
-      setTrendModalOpen(true);
-      setAuditFinal(null);
-      setAuditPreview(null);
-    } else {
-      setTrendModalOpen(false);
+    // Acquisition step: default scanner OFF, clear preview
+    if(phase==="BIZ" && step==="ACQUIRE"){
+      setScanOn(false);
+      setScanErr("");
+      setScanPreview(null);
     }
-  },[pub?.phase]);
+  }, [gs?.phase, gs?.bizStep, gs?.year]);
 
-  // Load market options when entering MARKET_PICK
+  // Acquisition scanner lifecycle
   useEffect(()=>{
-    if(!sock || !pub || !my) return;
-    if(pub.phase==="MARKET_PICK"){
-      sock.emit("market_pick_enter",{ gameId, playerId: my.playerId },(res)=>{
-        if(res?.ok){
-          setMarketOptions(res.options||[]);
-          setContinentOrder(res.continentOrder||continentOrder);
-        }
-      });
+    const phase = gs?.phase;
+    const step = gs?.bizStep;
+    if(!(phase==="BIZ" && step==="ACQUIRE" && scanOn)){
+      try{ codeReader.reset(); }catch{}
+      return;
     }
-  },[sock,pub?.phase]);
-
-  // Load audit preview when entering AUDIT
-  useEffect(()=>{
-    if(!sock || !pub || !my) return;
-    if(pub.phase==="AUDIT"){
-      sock.emit("audit_preview",{ gameId, playerId: my.playerId },(res)=>{
-        if(res?.ok) setAuditPreview(res.preview);
-      });
-    } else {
-      setAuditPreview(null);
-      setAuditFinal(null);
-    }
-  },[sock,pub?.phase]);
-
-  // Scanner lifecycle
-  useEffect(()=>{
-    if(!scanOpen) return;
+    let active = true;
     setScanErr("");
-    readerRef.current = new BrowserMultiFormatReader();
     (async ()=>{
       try{
-        await readerRef.current.decodeFromVideoDevice(null, scannerRef.current, (result, err)=>{
-          if(result?.getText){
-            const qr = result.getText();
-            // stop camera immediately to avoid multiple reads
-            try{ readerRef.current?.reset(); }catch{}
-            sock.emit("scan_preview",{ gameId, playerId: my.playerId, qrText: qr },(res)=>{
-              if(!res?.ok){ setScanErr(res?.error||"Chyba QR"); setScanOpen(false); return; }
-              if(!res.available){ setScanErr("Karta už byla získána"); setScanOpen(false); return; }
-              setScanCard(res.card);
-              setScanOpen(false);
+        // Prefer back camera
+        try{
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+          stream.getTracks().forEach(t=>t.stop());
+        }catch{}
+
+        const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+        if(!devices?.length) throw new Error("Kamera nenalezena");
+        const back = pickBackCamera(devices);
+        const deviceId = back?.deviceId || devices[0].deviceId;
+
+        await codeReader.decodeFromVideoDevice(deviceId, videoRef.current, (result)=>{
+          if(!active) return;
+          if(result){
+            const raw = String(result.getText()||"").trim();
+            if(!raw) return;
+            // Pause scanning while we confirm
+            try{ codeReader.reset(); }catch{}
+            active = false;
+            // Ask server for preview (does NOT claim)
+            s.emit("scan_preview", { gameId, playerId, cardQr: raw }, (res)=>{
+              if(!res?.ok){
+                setScanErr(res?.error || "Neznámá karta");
+                // Resume scanning
+                setScanOn(false);
+                setTimeout(()=>{ setScanOn(true); }, 250);
+                return;
+              }
+              setScanPreview({ card: res.card });
             });
           }
         });
       }catch(e){
-        setScanErr("Kamera nelze spustit");
-        setScanOpen(false);
+        setScanErr(String(e?.message||e));
       }
     })();
-    return ()=>{ try{ readerRef.current?.reset(); }catch{} };
-  },[scanOpen]);
+    return ()=>{ active = false; try{ codeReader.reset(); }catch{} };
+  }, [gs?.phase, gs?.bizStep, scanOn, codeReader, s, gameId, playerId]);
 
-  const trends = pub?.trendsActive || [];
-  const canCounterTrend = (t)=> {
-    // server validates; UI shows only if not already countered/proofed
-    const already = my?.protections?.trendCounters?.[t.id] || my?.protections?.proofBadges?.[t.id];
-    return !already;
-  };
 
-  const walletTotalUSD = useMemo(()=>{
-    // info-only
-    const prices = gmState?.exchange?.prices || { BTC:10000, ETH:5000, LTC:1000, SIA:200 };
-    const c = my?.crypto || {};
-    return Math.floor((c.BTC||0)*prices.BTC + (c.ETH||0)*prices.ETH + (c.LTC||0)*prices.LTC + (c.SIA||0)*prices.SIA);
-  },[my?.crypto, gmState]);
+  function gmNext(){ s.emit("gm_next", { gameId, playerId }, (res)=>{ if(!res?.ok) setErr(res?.error||""); }); }
+  function gmBack(){ s.emit("gm_back", { gameId, playerId }, (res)=>{ if(!res?.ok) setErr(res?.error||""); }); }
 
-  if(!state) return <div className="container pagePad"><div className="card">Načítám…</div></div>;
-
-  function gmAdvance(){
-    sock.emit("gm_advance_phase",{ gameId, playerId: my.playerId },()=>{});
+  function commitML(amount){
+    s.emit("commit_ml_bid", { gameId, playerId, amountUsd: amount }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+      setMlPrivacy("hidden"); // auto hide after commit
+      setMlOverlayOpen(true);
+    });
   }
 
-  function renderPhase(){
-    const phase = pub.phase;
+  function commitAuction(bid, usedLobbyist){
+    s.emit("commit_auction_bid", { gameId, playerId, bidUsd: bid, usedLobbyist }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+      setAucPrivacy("hidden"); // auto hide after commit
+      setAucOverlayOpen(true);
+    });
+  }
 
-    if(phase==="ML"){
-      return (
-        <div className="card">
-          <div className="h2">Market Leader</div>
-          <div className="muted">Zadej částku nebo zvol „Nechci být Market Leader“.</div>
-          <div style={{height:10}} />
-          <input className="bigInput" placeholder="Částka (USD)" value={auctionBid} onChange={(e)=>setAuctionBid(e.target.value.replace(/[^\d]/g,""))} />
-          <div className="row">
-            <button className="btn" onClick={()=>sock.emit("ml_commit",{ gameId, playerId: my.playerId, bidUsd:Number(auctionBid||0), pass:false },()=>{})}>Potvrdit</button>
-            <button className="btn secondary" onClick={()=>sock.emit("ml_commit",{ gameId, playerId: my.playerId, pass:true },()=>{})}>Nechci být ML</button>
-          </div>
-          <div className="muted">Po potvrzení čekáš na ostatní.</div>
-        </div>
-      );
-    }
+  function openLobbyWindow(){
+    s.emit("gm_open_lobbyist_window", { gameId, playerId }, (res)=>{
+      if(!res?.ok) setErr(res?.error||"");
+    });
+  }
 
-    if(phase==="MARKET_PICK"){
-      const grouped = groupMarkets(marketOptions, continentOrder);
-      return (
-        <div className="card">
-          <div className="h2">Výběr trhu</div>
-          <div className="muted">Zvol trh (skrytý pohyb). Uvidíš jen volné trhy (a svůj aktuální v dalších letech).</div>
-          <div style={{height:10}} />
-          {continentOrder.map(cont=>{
-            const items = grouped[cont] || [];
-            if(items.length===0) return null;
-            return (
-              <div key={cont} style={{marginBottom:12}}>
-                <div style={{fontWeight:900, opacity:.9, marginBottom:6}}>{formatCont(cont)}</div>
-                <div className="grid2">
-                  {items.map(m=>(
-                    <button key={m.marketId} className="chip" onClick={()=>setConfirmMarket(m)}>
-                      <div style={{fontWeight:900}}>{formatType(m.marketType)}</div>
-                      <div className="muted" style={{fontSize:12}}>{m.marketId}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
+  function commitFinalAuction(finalBid){
+    s.emit("commit_auction_final_bid", { gameId, playerId, finalBidUsd: finalBid }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+      setAucPrivacy("hidden");
+      setAucOverlayOpen(true);
+    });
+  }
 
-    if(phase==="AUCTION"){
-      return (
-        <div className="card">
-          <div className="h2">Dražba</div>
-          <div className="muted">Zadej nabídku, nebo „Nechci dražit“. Lobbista je tajný – nikdo nepozná, že ho používáš.</div>
-          <div style={{height:10}} />
-          <input className="bigInput" placeholder="Částka (USD)" value={auctionBid} onChange={(e)=>setAuctionBid(e.target.value.replace(/[^\d]/g,""))} />
-          <label className="checkRow">
-            <input type="checkbox" checked={auctionPass} onChange={(e)=>setAuctionPass(e.target.checked)} />
-            <span>Nechci dražit</span>
-          </label>
-          <label className="checkRow">
-            <input type="checkbox" checked={auctionLobbyist} onChange={(e)=>{
-              setAuctionLobbyist(e.target.checked);
-              sock.emit("auction_set_lobbyist_intent",{ gameId, playerId: my.playerId, enabled: e.target.checked },()=>{});
-            }} />
-            <span>Použít Lobbistu (pokud mám)</span>
-          </label>
-          <div className="row">
-            <button className="btn" onClick={()=>{
-              sock.emit("auction_commit_initial",{ gameId, playerId: my.playerId, bidUsd:Number(auctionBid||0), pass: auctionPass },()=>{});
-            }}>Potvrdit</button>
-          </div>
-          <div className="muted">Po potvrzení čekáš na ostatní. Pokud máš intel, přijde ti upozornění.</div>
-        </div>
-      );
-    }
+  function pickMarket(marketId){
+    s.emit("pick_market", { gameId, playerId, marketId }, (res)=>{
+      if(!res?.ok) setErr(res?.error || "Nelze vybrat trh");
+    });
+  }
 
-    if(phase==="ACQUIRE"){
-      return (
-        <div className="card">
-          <div className="h2">Akvizice</div>
-          <div className="muted">Získal jsem kartu → skener. Nezískal jsem kartu → hotovo.</div>
-          {scanErr ? <div className="notice">{scanErr}</div> : null}
-          <div className="row">
-            <button className="btn" onClick={()=>setScanOpen(true)}>Získal jsem kartu</button>
-            <button className="btn secondary" onClick={()=>sock.emit("acquire_no_card_commit",{ gameId, playerId: my.playerId },()=>{})}>Nezískal jsem kartu</button>
-          </div>
-        </div>
-      );
-    }
+  function commitCrypto(){
+    s.emit("commit_crypto", { gameId, playerId, deltas: cryptoD }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+      setCryptoPrivacy("hidden");
+      setCryptoOverlayOpen(true);
+    });
+  }
 
-    if(phase==="EXCHANGE"){
-      return (
-        <div className="card">
-          <div className="h2">Kryptoburza</div>
-          <div className="muted">Celková suma USD (informativní) je nad tabulkou.</div>
+  function commitSettle(){
+    s.emit("commit_settlement_ready", { gameId, playerId }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+      setSettlePrivacy("hidden");
+      setSettleOverlayOpen(true);
+    });
+  }
 
-          <div style={{marginTop:10, fontWeight:900, fontSize:18}}>≈ {walletTotalUSD.toLocaleString("cs-CZ")} USD</div>
+  function acceptScannedCard(cardId){
+    s.emit("claim_card", { gameId, playerId, cardId }, (res)=>{
+      if(!res?.ok) setErr(res?.error||"Chyba");
+      setScanPreview(null);
+      // Resume scanning if still in ACQUIRE
+      setScanOn(false);
+      setTimeout(()=>{ setScanOn(true); }, 250);
+    });
+  }
 
-          {pendingErr ? <div className="notice">{pendingErr}</div> : null}
+  function rejectScannedCard(){
+    setScanPreview(null);
+    setScanOn(false);
+    setTimeout(()=>{ setScanOn(true); }, 250);
 
-          <div style={{height:10}} />
-          <div className="grid4">
-            {["BTC","ETH","LTC","SIA"].map(c=>(
-              <div key={c} className="chip">
-                <div style={{fontWeight:900}}>{c}</div>
-                <div className="muted" style={{fontSize:12}}>Máš: {my.crypto?.[c]||0} ks</div>
-                <input className="smallInput" value={String(pending[c]||0)} onChange={(e)=>{
-                  const v = Number(String(e.target.value).replace(/[^\-\d]/g,""))||0;
-                  const next = { ...pending, [c]: v };
-                  setPending(next);
-                  setPendingErr("");
-                  sock.emit("exchange_update_pending",{ gameId, playerId: my.playerId, pending: next },(res)=>{
-                    if(!res?.ok) setPendingErr(res?.error||"Chyba");
-                  });
-                }} />
-                <div className="muted" style={{fontSize:12}}>Delta (ks)</div>
-              </div>
-            ))}
-          </div>
+  function commitAcquireNoCard(){
+    s.emit("commit_acquire", { gameId, playerId, gotAny:false }, (res)=>{
+      if(!res?.ok) setErr(res?.error||"Chyba");
+    });
+  }
+  function commitAcquireDone(){
+    s.emit("commit_acquire", { gameId, playerId, gotAny:true }, (res)=>{
+      if(!res?.ok) setErr(res?.error||"Chyba");
+    });
+  }
+  }
 
-          <div className="row" style={{marginTop:12}}>
-            <button className="btn" onClick={()=>sock.emit("exchange_commit",{ gameId, playerId: my.playerId },()=>{})}>Potvrdit obchody</button>
-          </div>
-        </div>
-      );
-    }
+  // derived display amounts
+  const mlAmount = gs?.biz?.mlBids?.[playerId]?.amountUsd;
+  const aucEntry = gs?.biz?.auction?.entries?.[playerId] || null;
+  const aucShownBid = (aucEntry?.usedLobbyist && aucEntry?.finalCommitted) ? aucEntry?.finalBidUsd : aucEntry?.bidUsd;
+  const cryptoDelta = gs?.crypto?.entries?.[playerId]?.deltaUsd;
+  const settleAmount = gs?.settle?.entries?.[playerId]?.settlementUsd;
 
-    if(phase==="AUDIT"){
-      return (
-        <div className="card">
-          <div className="h2">Audit</div>
-          <div className="muted">Vyúčtování roku (app = tool, USD cash u stolu). Nejdřív zahájíš audit, pak se dopočítá finál.</div>
+  const headerPhase =
+    gs?.phase==="BIZ" ? "Byznysová fáze" :
+    gs?.phase==="CRYPTO" ? "Krypto fáze" :
+    gs?.phase==="SETTLE" ? "Audit" :
+    gs?.status==="LOBBY" ? "Lobby" :
+    gs?.status==="GAME_OVER" ? "Konec hry" : "";
 
-          {auditMsg ? <div className="notice">{auditMsg}</div> : null}
+  const markets = gs?.catalog?.markets || [];
+  const locks = gs?.biz?.marketLocks || {};
+  const myMove = gs?.biz?.move?.[playerId];
 
-          <div style={{height:10}} />
-          {(auditFinal?.rows || auditPreview?.rows || []).map((r,i)=>(
-            <div key={i} className="rowLine">
-              <div style={{flex:1}}>{r.label}</div>
-              <div style={{fontWeight:900}}>{(r.value||0).toLocaleString("cs-CZ")} USD</div>
-            </div>
-          ))}
-          <div className="rowLine" style={{marginTop:8,borderTop:"1px solid rgba(255,255,255,.12)",paddingTop:8}}>
-            <div style={{flex:1,fontWeight:900}}>Součet</div>
-            <div style={{fontWeight:900,fontSize:18}}>{(auditFinal?.total ?? auditPreview?.total ?? 0).toLocaleString("cs-CZ")} USD</div>
-          </div>
+  // Tabs content data
+  const myInv = gs?.inventory?.[playerId] || { investments:[], miningFarms:[], experts:[] };
+  const myReveals = gs?.reveals?.[playerId] || { globalYearsRevealed:[], cryptoYearsRevealed:[] };
 
-          <div style={{height:10}} />
-          <div className="grid2">
-            <button className="btn" onClick={()=>sock.emit("audit_start",{ gameId, playerId: my.playerId },(res)=>{ if(res?.ok) setAuditMsg("Hotovo – čekám na ostatní."); })}>Zahájit audit</button>
-            <button className="btn secondary" onClick={()=>setLawyerOpen(true)}>Použít Právníky</button>
-            <button className="btn secondary" onClick={()=>{ setLobbyAction("STEAL"); setLobbyOpen(true); }}>Použít Lobbistu – steal</button>
-            <button className="btn secondary" onClick={()=>{ setLobbyAction("SABOTAGE"); setLobbyOpen(true); }}>Použít Lobbistu – sabotage</button>
-          </div>
-
-          <div style={{height:10}} />
-          <button className="btn" disabled={!auditFinal} onClick={()=>sock.emit("audit_confirm",{ gameId, playerId: my.playerId },()=>{})}>Potvrdit audit</button>
-        </div>
-      );
-    }
-
-    return <div className="card">Neznámá fáze.</div>;
+  if(err){
+    // keep minimal
   }
 
   return (
-    <div className="container pagePad">
-      <div className="header">
-        <h1 className="brand">KRYPTOPOLY</h1>
-        <button className="iconBtn" onClick={()=>r.push("/")}>✕</button>
-      </div>
-
-      <PhaseBar phase={pub.phase} />
-
-      {isGM ? (
-        <div className="card" style={{marginTop:12}}>
-          <div style={{fontWeight:900}}>GM panel</div>
-          <div className="muted">Manuální posun je zachován. OK se používá, když jsou hráči ready.</div>
-          <div className="row">
-            <button className="btn" onClick={gmAdvance}>OK / Další fáze</button>
-            {pub.phase==="AUDIT" && (gmState?.audit?.confirmed===pub.readiness.total) ? (
-              <button className="btn secondary" onClick={()=>sock.emit("gm_next_year",{ gameId, playerId: my.playerId },()=>{})}>Nový rok</button>
+    <div className="screen">
+      <div className="topHeader">
+        <div className="topHeaderRow">
+          <div>
+            <div className="brand">KRYPTOPOLY</div>
+            <div className="subBrand">{headerPhase}</div>
+          </div>
+          <div className="topHeaderRight">
+            {gs?.year ? <div className="yearPill">Rok {gs.year}</div> : null}
+            {isGM ? (
+              <button className="gmFab" onClick={()=>setGmPanelOpen(true)} aria-label="GM panel">
+                GM
+              </button>
             ) : null}
           </div>
-          <div className="muted">Ready: {pub.readiness.count}/{pub.readiness.total}</div>
         </div>
-      ) : null}
-
-      <div style={{marginTop:12}}>
-        {renderPhase()}
+        <StepIcons phase={gs?.phase} bizStep={gs?.bizStep} />
       </div>
 
-      <BottomBar active={activeTab} onTab={(t)=> setActiveTab(t)} />
+      {err ? <div className="toast" onClick={()=>setErr("")}>{err}</div> : null}
 
-      {activeTab==="wallet" ? (
-        <Modal title="Peněženka" onClose={()=>setActiveTab(null)} variant="top">
-          <div className="muted">USD cash aplikace neeviduje. Níže jsou kryptoměny.</div>
-          <div style={{height:10}} />
-          {["BTC","ETH","LTC","SIA"].map(c=>(
-            <div key={c} className="rowLine">
-              <div style={{flex:1}}>{c}</div>
-              <div style={{fontWeight:900}}>{my.crypto?.[c]||0} ks</div>
-            </div>
-          ))}
-        </Modal>
-      ) : null}
-
-      {activeTab==="cards" ? (
-        <Modal title="Karty" onClose={()=>setActiveTab(null)} variant="top">
-          <div className="rowLine"><div style={{flex:1}}>Tradiční investice</div><div style={{fontWeight:900}}>{my.cardsSummary?.investments||0}</div></div>
-          <div className="rowLine"><div style={{flex:1}}>Mining farmy</div><div style={{fontWeight:900}}>{my.cardsSummary?.miningFarms||0}</div></div>
-          <div className="rowLine"><div style={{flex:1}}>Experti</div><div style={{fontWeight:900}}>{my.cardsSummary?.experts||0}</div></div>
-        </Modal>
-      ) : null}
-
-      {activeTab==="trends" ? (
-        <Modal title="Trendy" onClose={()=>setActiveTab(null)} variant="top">
-          {trends.length===0 ? <div className="muted">Žádné trendy.</div> : null}
-          {trends.map(t=>(
-            <div key={t.id} className="rowLine" style={{alignItems:"flex-start"}}>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:900}}>{t.name}</div>
-                <div className="muted" style={{fontSize:12}}>{t.infoOnly ? "Info (kontrola u stolu)" : "Aplikace zohledňuje v logice"}</div>
-              </div>
-              <div>
-                {/* no actions here to keep 1 action per screen; actions are in phase modals */}
+      <div className="content">
+        {!gs ? (
+          <div className="card"><div className="muted">Načítám hru…</div></div>
+        ) : gs.status==="GAME_OVER" ? (
+          <div className="card center">
+            <div style={{fontSize:28, fontWeight:900}}>Konec hry</div>
+            <div className="muted">Díky za testování.</div>
+          </div>
+        ) : gs.phase==="BIZ" && gs.bizStep==="TRENDS" ? (
+          <TrendsPreviewCard
+            gs={gs}
+            onOpen={()=>setTab("trends")}
+            onOpenTrend={(t)=>setTrendModal(t)}
+            onOpenRegional={(t)=>setRegionalModal(t)}
+          />
+        ) : gs.phase==="BIZ" && gs.bizStep==="ML_BID" ? (
+          <div className="card phaseCard">
+            <div className="phaseHeader">
+              <div className="phaseLeft">
+                <div className="phaseIcon">👑</div>
+                <div>
+                  <div className="phaseTitle">Market Leader</div>
+                  <div className="phaseSub">Zadej nabídku v USD. Po potvrzení se displej automaticky skryje.</div>
+                </div>
               </div>
             </div>
-          ))}
+
+            {/* golden rule: keep button styling (classes) identical; only change layout */}
+            <div className="formRow stackConfirm">
+              <input
+                className="inputBig"
+                inputMode="numeric"
+                placeholder="0"
+                maxLength={8}
+                value={mlBid}
+                onChange={(e)=>setMlBid(e.target.value.replace(/[^\d]/g,""))}
+              />
+              <button className="primaryBtn big full" onClick={()=>commitML(mlBid===""?0:Number(mlBid))}>Potvrdit</button>
+              <button className="secondaryBtn big full" onClick={()=>commitML(null)}>Nechci být ML</button>
+            </div>
+          </div>
+        ) : gs.phase==="BIZ" && gs.bizStep==="MOVE" ? (
+          <div className="card phaseCard">
+            <div className="phaseHeader">
+              <div className="phaseLeft">
+                <div className="phaseIcon">📍</div>
+                <div>
+                  <div className="phaseTitle">Investice (pohyb)</div>
+                  <div className="phaseSub">Vyber trh. Jakmile klikneš, trh zmizí ostatním. Volba je definitivní.</div>
+                </div>
+              </div>
+            </div>
+            {(() => {
+              const year = Number(gs?.year || 1);
+              const isFarm = (m) => {
+                const t = String(m?.type || "").toLowerCase();
+                const n = String(m?.name || "").toLowerCase();
+                const id = String(m?.marketId || "").toLowerCase();
+                return t.includes("farm") || n.includes("farma") || id.startsWith("f");
+              };
+              const kindOf = (m) => {
+                const t = `${m?.type || ""} ${m?.name || ""}`.toLowerCase();
+                if (isFarm(m)) return "farm";
+                if (t.includes("průmys") || t.includes("prumys") || t.includes("industry")) return "industry";
+                if (t.includes("těž") || t.includes("tez") || t.includes("mining") || t.includes("těža") ) return "mining";
+                if (t.includes("země") || t.includes("zeme") || t.includes("agri") || t.includes("agriculture")) return "agri";
+                return "other";
+              };
+              const continentLabel = (c) => {
+                const x = String(c || "");
+                if (x === "N_AMERICA") return "Sev. Amerika";
+                if (x === "S_AMERICA") return "Již. Amerika";
+                if (x === "EUROPE") return "Evropa";
+                if (x === "AFRICA") return "Afrika";
+                if (x === "ASIA") return "Asie";
+                if (x === "OCEANIA") return "Austrálie";
+                return x;
+              };
+
+              const continentOrder = ["N_AMERICA", "S_AMERICA", "EUROPE", "AFRICA", "ASIA", "OCEANIA"];
+              const nonFarm = markets.filter((m) => !isFarm(m));
+              const farms = markets.filter((m) => isFarm(m));
+
+              const rows = continentOrder
+                .map((cont) => {
+                  const ms = nonFarm.filter((m) => m.continent === cont);
+                  if (!ms.length) return null;
+                  const sortKey = (m) => {
+                    const k = kindOf(m);
+                    return k === "industry" ? 0 : k === "mining" ? 1 : k === "agri" ? 2 : 9;
+                  };
+                  const picked = [...ms].sort((a, b) => sortKey(a) - sortKey(b)).slice(0, 2);
+                  return { cont, markets: picked };
+                })
+                .filter(Boolean);
+
+              const renderBtn = (m) => {
+                const lockedBy = locks[m.marketId];
+                const locked = !!lockedBy && lockedBy !== playerId;
+                const mine = myMove?.marketId === m.marketId;
+                const cls = kindOf(m);
+
+                // UX: When another player occupies a market, it becomes invisible to others (blank slot).
+                if(locked && !mine){
+                  return <div key={m.marketId} className={"marketCell hiddenSlot " + cls} aria-hidden="true" />;
+                }
+                return (
+                  <button
+                    key={m.marketId}
+                    className={"marketCell " + cls + (locked ? " locked" : "") + (mine ? " mine" : "")}
+                    disabled={locked || !!myMove?.committed}
+                    onClick={() => pickMarket(m.marketId)}
+                    title={m.name || m.marketId}
+                  >
+                    <div className="marketCellTop">
+                      <span className="marketCellTitle">{m.name || m.marketId}</span>
+                      <span className="marketCellTag">{m.type}</span>
+                    </div>
+                    <div className="marketCellMeta">{m.marketId}</div>
+                    {mine ? <div className="pill">MOJE</div> : locked ? <div className="pill dim">OBS.</div> : null}
+                  </button>
+                );
+              };
+
+              return (
+                <div className="marketTable">
+                  {rows.map((r) => (
+                    <div key={r.cont} className="marketRow">
+                      <div className="marketRowLabel">{continentLabel(r.cont)}</div>
+                      <div className="marketRowCells">
+                        {r.markets.map(renderBtn)}
+                      </div>
+                    </div>
+                  ))}
+
+                  {year >= 2 ? (
+                    <div className="marketRow">
+                      <div className="marketRowLabel">Farma</div>
+                      <div className="marketRowCells farms">
+                        {[0, 1, 2].map((i) => {
+                          const m = farms[i];
+                          if (!m) return <div key={i} className="marketCell placeholder">Farma {i + 1}</div>;
+                          const mm = { ...m, name: `Farma ${i + 1}` };
+                          return renderBtn(mm);
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
+          </div>
+        ) : gs.phase==="BIZ" && gs.bizStep==="AUCTION_ENVELOPE" ? (
+          <div className="card phaseCard">
+            <div className="phaseHeader">
+              <div className="phaseLeft">
+                <div className="phaseIcon">✉️</div>
+                <div>
+                  <div className="phaseTitle">Dražba – obálka</div>
+                  <div className="phaseSub">Zadej nabídku v USD, nebo zvol neúčast. Pokud máš lobbistu, můžeš získat „poslední šanci“.</div>
+                </div>
+              </div>
+              {isGM ? <button className="ghostBtn" onClick={openLobbyWindow}>Lobbista</button> : null}
+            </div>
+
+            {!aucEntry?.committed ? (
+              <>
+                {/* golden rule: keep button styling (classes) identical; only change layout */}
+                <div className="formRow stackConfirm">
+                  <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucBid} onChange={(e)=>setAucBid(e.target.value.replace(/[^\d]/g,""))} />
+                  <button className="primaryBtn big full" onClick={()=>commitAuction(aucBid===""?0:Number(aucBid), useLobby)}>Potvrdit</button>
+                </div>
+                <div className="formRow">
+                  <label className="checkRow">
+                    <input type="checkbox" checked={useLobby} onChange={(e)=>setUseLobby(e.target.checked)} />
+                    <span>Použít lobbistu (pokud ho mám)</span>
+                  </label>
+                </div>
+                <button className="secondaryBtn big full" onClick={()=>commitAuction(null, false)}>Nechci dražit</button>
+              </>
+            ) : (
+              <>
+                {gs.biz.auction.lobbyistPhaseActive && aucEntry?.usedLobbyist && !aucEntry?.finalCommitted ? (
+                  <div className="cardInner">
+                    <div className="muted"><b>Poslední šance</b> – vidíš nabídky ostatních (mimo aplikaci si je ukážete). Zadej finální nabídku.</div>
+                    <div className="formRow">
+                      <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucFinalBid} onChange={(e)=>setAucFinalBid(e.target.value.replace(/[^\d]/g,""))} />
+                      <button className="primaryBtn big" onClick={()=>commitFinalAuction(aucFinalBid===""?0:Number(aucFinalBid))}>Odeslat</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="muted">Obálka odeslána. (Telefon je skrytý – můžeš odkryt ručně.)</div>
+                )}
+              </>
+            )}
+          </div>
+        ) : gs.phase==="BIZ" && gs.bizStep==="ACQUIRE" ? (
+          <div className="card phaseCard">
+            <div className="phaseHeader">
+              <div className="phaseLeft">
+                <div className="phaseIcon">📷</div>
+                <div>
+                  <div className="phaseTitle">Získej svou investici</div>
+                  <div className="phaseSub">Naskenuj QR na kartě a potvrď, že je tvoje. Můžeš skenovat více karet.</div>
+                </div>
+              </div>
+              <button className={"primaryBtn"} onClick={()=>{ setScanErr(""); setScanOn(v=>!v); }}>
+                {scanOn ? "Vypnout skener" : "Zapnout skener"}
+              </button>
+            </div>
+
+            {scanOn ? (
+              <>
+                {scanErr ? <div className="notice">{scanErr}</div> : null}
+                <div className="scanFrame">
+                  <video ref={videoRef} className="scanVideo" />
+                  <div className="scanHint">Zaměř QR kód</div>
+                </div>
+                <div className="muted" style={{marginTop:10}}>Tip: přibliž/oddal telefon, ať je QR ostrý.</div>
+              </>
+            ) : (
+              <div className="scanIdle">
+                <div className="scanIdleIcon">📷</div>
+                <div className="scanIdleText">Skener je vypnutý. Zapni ho a naskenuj své karty.</div>
+              </div>
+            )}
+
+            {(() => {
+              const committed = !!gs?.biz?.acquire?.[playerId]?.committed;
+              return (
+                <>
+                  {committed ? (
+                    <div className="muted" style={{marginTop:12}}>Hotovo. Čekám na ostatní hráče…</div>
+                  ) : (
+                    <div style={{marginTop:12, display:"grid", gap:10}}>
+                      <button className="primaryBtn big full" onClick={()=>{ setScanErr(""); setScanOn(true); }}>
+                        Získal jsem kartu
+                      </button>
+                      <button className="secondaryBtn big full" onClick={commitAcquireNoCard}>
+                        Nezískal jsem kartu
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
+          </div>        ) : gs.phase==="CRYPTO" ? (
+          <div className="card phaseCard">
+            <div className="phaseHeader">
+              <div className="phaseLeft">
+                <div className="phaseIcon">₿</div>
+                <div>
+                  <div className="phaseTitle">Kryptofáze</div>
+                  <div className="phaseSub">Naklikej změny v kusech. Pak potvrď. Ukazovací režim skryje detaily.</div>
+                </div>
+              </div>
+            </div>
+            <button className="primaryBtn full" onClick={commitCrypto}>Potvrdit transakci</button>
+            <button className="ghostBtn full" onClick={()=>{ setCryptoD({BTC:0,ETH:0,LTC:0,SIA:0}); commitCrypto(); }}>Neobchoduji</button>
+          </div>
+        ) : gs.phase==="SETTLE" ? (
+          <div className="card phaseCard">
+            <div className="phaseHeader">
+              <div className="phaseLeft">
+                <div className="phaseIcon">🧾</div>
+                <div>
+                  <div className="phaseTitle">{(() => {
+                    const all = gs?.players?.every(p=>gs?.settle?.entries?.[p.playerId]?.committed);
+                    return all ? "Finální audit" : "Audit";
+                  })()}</div>
+                  <div className="phaseSub">Nejdřív zafixuj audit. Pak můžeš povolat experty. Výsledek lze ukázat na celé obrazovce.</div>
+                </div>
+              </div>
+              <button className="ghostBtn" onClick={()=>setTab("accounting")}>Účetnictví</button>
+            </div>
+
+            {(() => {
+              const entry = gs?.settle?.entries?.[playerId];
+              const committed = !!entry?.committed;
+              const allCommitted = gs?.players?.every(p=>gs?.settle?.entries?.[p.playerId]?.committed);
+              const view = committed ? entry : auditPreview;
+              const sum = view?.settlementUsd;
+              const breakdown = view?.breakdown || [];
+              const inv = gs?.inventory?.[playerId] || { experts:[] };
+              const usable = (inv.experts||[]).filter(e=>!e.used && (e.functionKey==="STEAL_BASE_PROD" || e.functionKey==="LAWYER_TRENDS"));
+
+              return (
+                <>
+                  <div className="auditBlock">
+                    {auditLoading && !committed ? (
+                      <div className="muted">Počítám…</div>
+                    ) : view?.error ? (
+                      <div className="muted">{view.error}</div>
+                    ) : (
+                      <>
+                        <div className="auditHeadline">
+                          <div className="auditHint">Souhrn (USD)</div>
+                          <div className={"auditSum "+((sum||0)>=0?"pos":"neg")}>{(sum||0)>=0?"+":""}{sum||0} USD</div>
+                        </div>
+                        <div className="auditTable">
+                          {breakdown.length ? breakdown.map((b,idx)=> (
+                            <div key={idx} className="auditRow">
+                              <div className="auditLbl">{b.label}</div>
+                              <div className={"auditVal "+(b.usd>0?"pos":b.usd<0?"neg":"neu")}>{b.usd>=0?"+":""}{b.usd} USD</div>
+                            </div>
+                          )) : <div className="muted">Rozpad není k dispozici.</div>}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {!committed ? (
+                    <div className="ctaRow">
+                      <button className="primaryBtn big full" onClick={commitSettle}>Zahájit audit</button>
+                      {usable.length ? (
+                        <button className="secondaryBtn big full" onClick={()=>setExpertsOpen(true)}>Povolat experty</button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      {!allCommitted ? (
+                        <div className="muted" style={{marginTop:10}}>Čekám na ostatní hráče…</div>
+                      ) : (
+                        <div className="ctaRow">
+                          {usable.length ? (
+                            <button className="secondaryBtn big full" onClick={()=>setExpertsOpen(true)}>Povolat experty</button>
+                          ) : null}
+                          <button className="primaryBtn big full" onClick={()=>{ setSettleOverlayOpen(true); setSettlePrivacy("reveal"); }}>Potvrdit audit (ukázat)</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        ) : (
+          <div className="card">
+            <div className="muted">Čekám na GM…</div>
+          </div>
+        )}
+      </div>
+
+      <BottomBar onTab={setTab} active={tab} />
+
+
+      {mlIntroOpen && gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" ? (
+        <SuperTopModal title={`Trendy • Rok ${gs?.year||""}`} onClose={()=>setMlIntroOpen(false)}>
+          <div className="muted" style={{marginBottom:10}}>Aktivní trendy pro tento rok. Zavři OK a pokračuj v nabídce Market Leadera.</div>
+          <TrendsIntroBody gs={gs} onOpenTrend={(t)=>setTrendModal(t)} onOpenRegional={(t)=>setRegionalModal(t)} />
+          <div style={{marginTop:14}}>
+            <button className="primaryBtn big full" onClick={()=>setMlIntroOpen(false)}>OK</button>
+          </div>
+        </SuperTopModal>
+      ) : null}
+
+      {isGM && gmReadyOpen ? (
+        <SuperTopModal title="Všichni hotovo" onClose={()=>setGmReadyOpen(false)}>
+          <div className="muted" style={{marginBottom:12}}>Všichni hráči provedli definitivní volbu v této fázi.</div>
+          <button className="primaryBtn big full" onClick={()=>setGmReadyOpen(false)}>OK</button>
+          <div className="muted" style={{marginTop:10}}>Posuň hru přes GM tlačítko vpravo nahoře.</div>
+        </SuperTopModal>
+      ) : null}
+
+      {aucIntel ? (
+        <SuperTopModal title="Lobbista – poslední šance" onClose={()=>{ setAucIntel(null); stopRing(); }}>
+          <div className="muted" style={{marginBottom:10}}>Vidíš nabídky protihráčů. Můžeš upravit svou nabídku a potvrdit finální rozhodnutí.</div>
+          <div className="cardInner" style={{padding:0}}>
+            {(aucIntel.intel||[]).map(r=>(
+              <div key={r.playerId} className="row" style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+                <div>{r.name}</div>
+                <div style={{fontWeight:800}}>{r.bidUsd===null ? "Nechce dražit" : `${r.bidUsd} USD`}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:12, display:"grid", gap:10}}>
+            <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucFinalBid} onChange={(e)=>setAucFinalBid(e.target.value.replace(/[^\d]/g,""))} />
+            <button className="primaryBtn big full" onClick={()=>{ commitFinalAuction(aucFinalBid===""?0:Number(aucFinalBid)); setAucIntel(null); stopRing(); }}>Potvrdit finální nabídku</button>
+            <button className="ghostBtn full" onClick={()=>{ setAucIntel(null); stopRing(); }}>Zavřít</button>
+          </div>
+        </SuperTopModal>
+      ) : null}
+
+      {acqMoreOpen ? (
+        <SuperTopModal title="Máš toho víc?" onClose={()=>setAcqMoreOpen(false)}>
+          <div className="muted" style={{marginBottom:12}}>Chceš naskenovat další kartu?</div>
+          <div style={{display:"grid", gap:10}}>
+            <button className="primaryBtn big full" onClick={()=>{ setAcqMoreOpen(false); setScanOn(true); }}>ANO</button>
+            <button className="secondaryBtn big full" onClick={()=>{ setAcqMoreOpen(false); commitAcquireDone(); }}>NE</button>
+          </div>
+        </SuperTopModal>
+      ) : null}
+
+      {gmPanelOpen && isGM && gs?.status==="IN_PROGRESS" ? (
+        <Modal title="GM panel" onClose={()=>setGmPanelOpen(false)} variant="top">
+          <div className="gmPanel">
+            <div className="muted" style={{marginBottom:12}}>Ovládání fází (pouze GM). Nemá rušit hráče.</div>
+            <div className="ctaRow">
+              <button className="secondaryBtn big full" onClick={()=>{ gmBack(); setGmPanelOpen(false); }}>← Zpět</button>
+              <button className="primaryBtn big full" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Další krok →</button>
+            </div>
+          </div>
         </Modal>
       ) : null}
 
-      {trendModalOpen && pub.phase==="ML" ? (
-        <Modal title="Trendy tohoto roku" onClose={()=>setTrendModalOpen(false)} variant="top">
-          <div className="muted">Přehled aktivních globálních trendů. Pokud máš Právníka a je to relevantní, můžeš se bránit (v rámci pravidel).</div>
-          <div style={{height:10}} />
-          {trends.map(t=>(
-            <div key={t.id} className="rowLine" style={{alignItems:"flex-start"}}>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:900}}>{t.name}</div>
-                <div className="muted" style={{fontSize:12}}>{t.infoOnly ? "Info trend" : "Enforced trend"}</div>
-                {my?.protections?.proofBadges?.[t.id] ? <div className="notice" style={{marginTop:6}}>{my.protections.proofBadges[t.id].text}</div> : null}
+      {/* Acquisition: scanned card confirmation (always top) */}
+      {scanPreview?.card ? (
+        <SuperTopModal
+          title={scanPreview.card.kind==="INVESTMENT" ? "Tradiční investice" : scanPreview.card.kind==="MINING_FARM" ? "Mining farma" : "Expert"}
+          onClose={()=>{ setScanPreview(null); setScanOn(false); }}
+        >
+          <div style={{display:"grid",gap:10}}>
+            <div className="cardInner">
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:900,fontSize:18}}>{scanPreview.card.name}</div>
+                  <div className="muted">ID: {scanPreview.card.cardId}</div>
+                </div>
+                <div className="pill">{scanPreview.card.kind.replace("_"," ")}</div>
               </div>
-              <div>
-                {canCounterTrend(t) ? (
-                  <button className="btn tiny" onClick={()=>sock.emit("lawyer_counter_trend",{ gameId, playerId: my.playerId, trendId: t.id },()=>{})}>Právník</button>
+              {scanPreview.card.kind==="INVESTMENT" ? (
+                <div className="muted" style={{marginTop:8}}>
+                  Kontinent: <b>{scanPreview.card.continent}</b> • Trh: <b>{scanPreview.card.market}</b> • Typ: <b>{scanPreview.card.type}</b>
+                  <br/>Základní produkce: <b>+{scanPreview.card.usdProduction} USD</b>
+                </div>
+              ) : scanPreview.card.kind==="MINING_FARM" ? (
+                <div className="muted" style={{marginTop:8}}>
+                  Krypto: <b>{scanPreview.card.crypto}</b> • Produkce: <b>+{scanPreview.card.cryptoProduction} ks/rok</b>
+                  <br/>Elektřina: <b>-{scanPreview.card.electricityUSD} USD</b>
+                </div>
+              ) : (
+                <div className="muted" style={{marginTop:8}}>
+                  Funkce: <b>{scanPreview.card.functionLabel}</b>
+                  <br/>{scanPreview.card.functionDesc}
+                </div>
+              )}
+            </div>
+
+            <div className="ctaRow">
+              <button className="primaryBtn full" onClick={()=>acceptScannedCard(scanPreview.card.cardId)}>✅ Ano, to je moje</button>
+              <button className="ghostBtn full" onClick={rejectScannedCard}>✖ Ne, chyba</button>
+            </div>
+          </div>
+        </SuperTopModal>
+      ) : null}
+
+
+      {/* NOTE: trend/regional detail overlays are rendered at the very end (superTop) so they always stay above other modals. */}
+      {/* privacy overlays */}
+      <PrivacyCard
+        kind="ML"
+        mode={(mlOverlayOpen && gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" && gs?.biz?.mlBids?.[playerId]?.committed) ? mlPrivacy : "edit"}
+        amountText={(mlAmount==null) ? "NECHCI" : `${mlAmount} USD`}
+        onReveal={()=>setMlPrivacy("reveal")}
+        onHide={()=>setMlPrivacy("hidden")}
+        onClose={()=>setMlOverlayOpen(false)}
+      />
+      <PrivacyCard
+        kind="AUCTION"
+        mode={(aucOverlayOpen && gs?.phase==="BIZ" && gs?.bizStep==="AUCTION_ENVELOPE" && gs?.biz?.auction?.entries?.[playerId]?.committed) ? aucPrivacy : "edit"}
+        amountText={(aucShownBid==null) ? "NECHCI" : `${aucShownBid} USD`}
+        onReveal={()=>setAucPrivacy("reveal")}
+        onHide={()=>setAucPrivacy("hidden")}
+        onClose={()=>setAucOverlayOpen(false)}
+      />
+      <PrivacyCard
+        kind="CRYPTO"
+        mode={(cryptoOverlayOpen && gs?.phase==="CRYPTO" && gs?.crypto?.entries?.[playerId]?.committed) ? cryptoPrivacy : "edit"}
+        amountText={`${cryptoDelta>0?"+":""}${cryptoDelta||0} USD`}
+        onReveal={()=>setCryptoPrivacy("reveal")}
+        onHide={()=>setCryptoPrivacy("hidden")}
+        onClose={()=>setCryptoOverlayOpen(false)}
+      />
+      <PrivacyCard
+        kind="SETTLE"
+        mode={(settleOverlayOpen && gs?.phase==="SETTLE" && gs?.settle?.entries?.[playerId]?.committed) ? settlePrivacy : "edit"}
+        amountText={`${settleAmount>=0?"+":""}${settleAmount??0} USD`}
+        onReveal={()=>setSettlePrivacy("reveal")}
+        onHide={()=>setSettlePrivacy("hidden")}
+        onClose={()=>setSettleOverlayOpen(false)}
+      />
+
+      {/* Tabs */}
+      {tab==="trends" ? (
+        <Modal title="Trendy" onClose={()=>setTab(null)}>
+          <TrendsPanel gs={gs} playerId={playerId} onOpenTrend={(t)=>setTrendModal(t)} onOpenRegional={(t)=>setRegionalModal(t)} onRevealGlobal={()=>s.emit("reveal_global_next_year",{gameId,playerId},()=>{})} onRevealCrypto={()=>s.emit("reveal_crypto_next_year",{gameId,playerId},()=>{})} />
+        </Modal>
+      ) : null}
+
+      {tab==="assets" ? (
+        <Modal title="Karty" onClose={()=>setTab(null)}>
+          <CardsPanel inv={myInv} />
+        </Modal>
+      ) : null}
+
+      {tab==="accounting" ? (
+        <Modal title="Účetnictví" onClose={()=>setTab(null)}>
+          <AccountingPanel gs={gs} playerId={playerId} gameId={gameId} />
+        </Modal>
+      ) : null}
+
+      {expertsOpen && gs?.phase==="SETTLE" ? (
+        <SuperTopModal title="Povolat experty" onClose={()=>{ setExpertsOpen(false); setExpertPick(null); setExpertTarget(null); setExpertCard(null); }}>
+          {(() => {
+            const inv = gs?.inventory?.[playerId] || { experts:[] };
+            const usable = (inv.experts||[]).filter(e=>!e.used && (e.functionKey==="STEAL_BASE_PROD" || e.functionKey==="LAWYER_TRENDS"));
+            const others = (gs?.players||[]).filter(p=>p.playerId!==playerId && p.role!=="GM");
+
+            function applySteal(){
+              const effect = { type:"STEAL_BASE_PRODUCTION", targetPlayerId: expertTarget, cardId: expertCard };
+              s.emit("apply_expert_effect", { gameId, playerId, effect }, (res)=>{
+                if(!res?.ok) alert(res?.error || "Chyba");
+                else {
+                  setExpertsOpen(false);
+                  setExpertPick(null); setExpertTarget(null); setExpertCard(null);
+                }
+              });
+            }
+
+            const step = !expertPick ? 1 : (expertPick.functionKey==="STEAL_BASE_PROD" ? (!expertTarget ? 2 : !expertCard ? 3 : 4) : 9);
+
+            return (
+              <div className="expertModal">
+                {!usable.length ? (
+                  <div className="muted">Nemáš žádného použitelného experta.</div>
+                ) : null}
+
+                {!expertPick ? (
+                  <div className="cardsGrid" style={{marginTop:6}}>
+                    {usable.map(e=>{
+                      const icon = e.functionKey==="STEAL_BASE_PROD" ? "🕴️" : "⚖️";
+                      return (
+                        <button key={e.cardId} className="expertPickTile" onClick={()=>setExpertPick(e)}>
+                          <div className="tileIcon">{icon}</div>
+                          <div className="tileMeta">
+                            <div className="tileTitle">{e.functionLabel}</div>
+                            <div className="tileSub">{e.functionDesc}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : expertPick.functionKey==="LAWYER_TRENDS" ? (
+                  <div className="cardInner">
+                    <div className="secTitle">Právník</div>
+                    <div className="muted" style={{marginTop:6}}>
+                      Právníka v této verzi používáš v detailu trendu (ochrana proti trendům). V auditu se jen připomíná, že ho máš k dispozici.
+                    </div>
+                    <button className="secondaryBtn big full" onClick={()=>{ setExpertPick(null); }}>Zpět</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="secTitle">{expertPick.functionLabel}</div>
+                    <div className="muted" style={{marginTop:6}}>Vyber hráče a jeho investici. Efekt se započítá do finálního auditu.</div>
+
+                    {!expertTarget ? (
+                      <div className="list" style={{marginTop:10}}>
+                        {others.length ? others.map(p=>(
+                          <button key={p.playerId} className="listItem clickable" onClick={()=>setExpertTarget(p.playerId)}>
+                            <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+                              <div><b>{p.name||"Hráč"}</b></div>
+                              <div className="pill">vybrat</div>
+                            </div>
+                          </button>
+                        )) : <div className="muted">Žádní další hráči.</div>}
+                      </div>
+                    ) : !expertCard ? (
+                      <div className="list" style={{marginTop:10}}>
+                        {(gs?.inventory?.[expertTarget]?.investments||[]).map(c=>(
+                          <button key={c.cardId} className="listItem clickable" onClick={()=>setExpertCard(c.cardId)}>
+                            <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+                              <div><b>{c.cardId}</b> • {c.name}</div>
+                              <div className="pill">+{c.usdProduction} USD</div>
+                            </div>
+                            <div className="muted">{c.continent} • {c.type}</div>
+                          </button>
+                        ))}
+                        <button className="secondaryBtn big full" onClick={()=>{ setExpertTarget(null); }}>Změnit hráče</button>
+                      </div>
+                    ) : (
+                      <div className="ctaRow" style={{marginTop:12}}>
+                        <button className="primaryBtn big full" onClick={applySteal}>ANO – aplikovat</button>
+                        <button className="secondaryBtn big full" onClick={()=>{ setExpertPick(null); setExpertTarget(null); setExpertCard(null); }}>NE – zrušit</button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {expertPick ? (
+                  <div className="muted" style={{marginTop:10}}>Krok {step}/4</div>
                 ) : null}
               </div>
-            </div>
-          ))}
-          <div style={{height:10}} />
-          <button className="btn" onClick={()=>setTrendModalOpen(false)}>OK</button>
+            );
+          })()}
+        </SuperTopModal>
+      ) : null}
+
+      {tab==="status" ? (
+        <Modal title="Stav hry" onClose={()=>setTab(null)}>
+          <pre style={{whiteSpace:"pre-wrap"}}>{JSON.stringify(gs, null, 2)}</pre>
         </Modal>
       ) : null}
 
-      {confirmMarket ? (
-        <Modal title="Potvrdit trh" onClose={()=>setConfirmMarket(null)} variant="top">
-          <div style={{fontWeight:900,fontSize:18}}>{formatCont(confirmMarket.continent)} – {formatType(confirmMarket.marketType)}</div>
-          <div className="muted">Definitivní rozhodnutí.</div>
-          <div style={{height:10}} />
-          <button className="btn" onClick={()=>{
-            sock.emit("market_pick_commit",{ gameId, playerId: my.playerId, marketId: confirmMarket.marketId },(res)=>{
-              if(res?.ok) setConfirmMarket(null);
-            });
-          }}>Potvrdit</button>
-        </Modal>
+      {trendModal ? (
+        <SuperTopModal title={`${trendModal.icon||"🌐"} ${trendModal.name||"Trend"}`} onClose={()=>setTrendModal(null)}>
+          <div className="modalText">
+            {trendModal.desc ? trendModal.desc : "Detail trendu není k dispozici."}
+          </div>
+
+          {(() => {
+            const inv = gs?.inventory?.[playerId] || { experts: [] };
+            const lawyerLeft = (inv.experts||[]).filter(e=>e.functionKey==="LAWYER_TRENDS" && !e.used).length;
+            const allowed = !!trendModal?.lawyer?.allowed;
+            const req = trendModal?.lawyer?.phase;
+            const phase = gs?.phase;
+            const biz = gs?.bizStep;
+
+            const canNow =
+              allowed && (
+                (req==="BIZ_TRENDS_ONLY" && phase==="BIZ" && biz==="TRENDS") ||
+                (req==="BIZ_MOVE_ONLY" && phase==="BIZ" && biz==="MOVE") ||
+                (req==="AUDIT_ANYTIME_BEFORE_CLOSE" && phase==="SETTLE")
+              );
+
+            const y = String(gs?.year||1);
+            const protectedNow = !!gs?.lawyer?.protections?.[playerId]?.[y]?.[trendModal.key];
+
+            function useLawyer(){
+              const s = getSocket();
+              s.emit("use_lawyer_on_trend", { gameId, playerId, trendKey: trendModal.key }, (res)=>{
+                if(!res?.ok) alert(res?.error || "Chyba");
+              });
+            }
+
+            const phaseHint =
+              req==="BIZ_TRENDS_ONLY" ? "Právníka lze použít pouze ve fázi Trendy." :
+              req==="BIZ_MOVE_ONLY" ? "Právníka lze použít pouze ve fázi Investice (pohyb)." :
+              req==="AUDIT_ANYTIME_BEFORE_CLOSE" ? "Právníka lze použít kdykoliv před uzavřením Auditu." :
+              "Právníka nelze použít.";
+
+            return (
+              <div className="lawyerBox">
+                <div className="secTitle" style={{marginTop:12}}>Právník</div>
+
+                {!allowed ? (
+                  <div className="muted">Na tento trend nelze použít Právníka.</div>
+                ) : protectedNow ? (
+                  <div className="pill" style={{display:"inline-flex"}}>✅ Ochráněno (tento rok)</div>
+                ) : lawyerLeft<1 ? (
+                  <div className="muted">Právník není k dispozici.</div>
+                ) : (
+                  <>
+                    <div className="muted">{phaseHint}</div>
+                    <button className={"primaryBtn full"+(canNow? "":" disabled")} disabled={!canNow} onClick={useLawyer}>
+                      Použít právníka
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+        </SuperTopModal>
       ) : null}
 
-      {intelOpen ? (
-        <Modal title="Intel (Lobbista)" onClose={()=>{ setIntelOpen(false); try{stopRing();}catch{} }} variant="top">
-          <div className="muted">Tajné informace. Můžeš upravit nabídku, nebo potvrdit beze změny.</div>
-          <div style={{height:10}} />
-          {intelOffers.map(o=>(
-            <div key={o.playerId} className="rowLine">
-              <div style={{flex:1}}>{o.name}</div>
-              <div style={{fontWeight:900}}>
-                {o.passed ? "PASS" : (o.bidUsd||0).toLocaleString("cs-CZ")+" USD"}
+      {regionalModal ? (
+        <SuperTopModal title={`${regionalModal.icon||"📍"} ${regionalModal.continent||"Kontinent"}`} onClose={()=>setRegionalModal(null)}>
+          <div className="secTitle">{regionalModal.name||"Regionální trend"}</div>
+          <div className="modalText" style={{marginTop:6}}>{regionalModal.desc || "Detail není k dispozici."}</div>
+        </SuperTopModal>
+      ) : null}
+    </div>
+  );
+}
+
+function TrendsPanel({ gs, playerId, onOpenTrend, onOpenRegional, onRevealGlobal, onRevealCrypto }){
+  if(!gs?.trends) return <div className="muted">Trendy nejsou načtené.</div>;
+  const yearsTotal = gs.config?.yearsTotal || 4;
+  const currentYear = gs.year || 1;
+  const byYear = gs.trends.byYear || {};
+  const reveals = gs.reveals?.[playerId] || { globalYearsRevealed:[], cryptoYearsRevealed:[] };
+  const gSet = new Set(reveals.globalYearsRevealed||[]);
+  const cSet = new Set(reveals.cryptoYearsRevealed||[]);
+  const inv = gs.inventory?.[playerId] || { experts:[] };
+  const analystLeft = inv.experts.filter(e=>e.functionKey==="ANALYST" && !e.used).length;
+  const guruLeft = inv.experts.filter(e=>e.functionKey==="CRYPTOGURU" && !e.used).length;
+
+  const regCls = (t)=>{
+    const k = String(t?.key||"");
+    const n = String(t?.name||"").toLowerCase();
+    if(k.includes("REG_INVESTMENT_BOOM") || n.includes("boom")) return "reg boom";
+    if(k.includes("REG_HIGH_EDUCATION") || n.includes("vzdělan") || n.includes("vzdelan") ) return "reg edu";
+    if(k.includes("REG_STABILITY") || n.includes("stabil")) return "reg stable";
+    if(k.includes("REG_TAXES") || n.includes("dan")) return "reg tax";
+    return "reg";
+  };
+
+  return (
+    <div>
+      <div className="muted" style={{marginBottom:10}}>
+        Scrolluj doprava. Aktuální rok je odkrytý. Budoucí roky jsou rubem (❓). Odkrytí je jen pro tebe.
+      </div>
+
+      <div className="revealBar">
+        <div className="revealChip">Analytik: <b>{analystLeft}</b></div>
+        <button className={"primaryBtn"+(analystLeft<1?" disabled":"")} disabled={analystLeft<1} onClick={onRevealGlobal}>Odkryj globální</button>
+        <div style={{width:12}}></div>
+        <div className="revealChip">Kryptoguru: <b>{guruLeft}</b></div>
+        <button className={"primaryBtn"+(guruLeft<1?" disabled":"")} disabled={guruLeft<1} onClick={onRevealCrypto}>Odkryj krypto</button>
+      </div>
+
+      <div className="yearsScroller">
+        {Array.from({length:yearsTotal}, (_,i)=>i+1).map(y=>{
+          const data = byYear[String(y)];
+          const isCurrentOrPast = y<=currentYear;
+          const gRevealed = isCurrentOrPast || gSet.has(y);
+          const cRevealed = isCurrentOrPast || cSet.has(y);
+
+          return (
+            <div key={y} className="yearCol">
+              <div className="yearTitle">Rok {y}</div>
+
+              <div className="secTitle">Globální</div>
+              <div className="cardRow">
+                {data?.globals?.map((t)=>(
+                  <TrendCard key={t.trendId} revealed={gRevealed} title={t.name} icon={t.icon||"🌐"} clickable={gRevealed} onClick={()=> onOpenTrend && onOpenTrend(t)} />
+                ))}
+              </div>
+
+              <div className="secTitle">Krypto</div>
+              <div className="cardRow">
+                <CryptoTrendCard revealed={cRevealed} crypto={data?.crypto} />
+              </div>
+
+              <div className="secTitle">Regionální</div>
+              <div>
+                {Object.values(data?.regional||{}).map((t)=>(
+                  <div key={t.trendId} className="regRow">
+                    <div className="regMeta">
+                      <div className="regName">{t.continent}</div>
+                      <div className="regCont muted">{t.name}</div>
+                    </div>
+                    <button className={"regSymBtn "+regCls(t)} onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
+                      <span className="regSymIcon">{t.icon || "📍"}</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-          <div style={{height:10}} />
-          <input className="bigInput" placeholder="Nová částka (USD)" value={auctionBid} onChange={(e)=>setAuctionBid(e.target.value.replace(/[^\d]/g,""))} />
-          <label className="checkRow">
-            <input type="checkbox" checked={auctionPass} onChange={(e)=>setAuctionPass(e.target.checked)} />
-            <span>Nechci dražit</span>
-          </label>
-          <div className="row">
-            <button className="btn" onClick={()=>{
-              sock.emit("auction_commit_final",{ gameId, playerId: my.playerId, bidUsd:Number(auctionBid||0), pass: auctionPass },(res)=>{
-                if(res?.ok){ setIntelOpen(false); try{stopRing();}catch{} }
-              });
-            }}>Potvrdit (definitivní)</button>
-            <button className="btn secondary" onClick={()=>{
-              // confirm without changes
-              sock.emit("auction_commit_final",{ gameId, playerId: my.playerId, bidUsd:Number(auctionBid||0), pass: auctionPass },(res)=>{
-                if(res?.ok){ setIntelOpen(false); try{stopRing();}catch{} }
-              });
-            }}>Potvrdit beze změny</button>
-          </div>
-        </Modal>
-      ) : null}
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
-      {scanOpen ? (
-        <Modal title="Skener" onClose={()=>setScanOpen(false)} variant="top">
-          <div className="muted">Namiř na QR kód. Kód je malý – drž telefon stabilně.</div>
-          <div style={{height:10}} />
-          <video ref={scannerRef} style={{width:"100%", borderRadius:16, background:"#000"}} />
-        </Modal>
-      ) : null}
 
-      {scanCard ? (
-        <Modal title="Potvrdit kartu" onClose={()=>setScanCard(null)} variant="top">
-          <div style={{fontWeight:900,fontSize:18}}>{scanCard.cardId}</div>
-          <div className="muted">{scanCard.kind}</div>
-          <div style={{height:10}} />
-          <button className="btn" onClick={()=>{
-            sock.emit("scan_claim",{ gameId, playerId: my.playerId, cardId: scanCard.cardId },(res)=>{
-              if(res?.ok){
-                setScanCard(null);
-                setMoreModal(true);
-              }
-            });
-          }}>Potvrdit získání</button>
-        </Modal>
-      ) : null}
-
-      {moreModal ? (
-        <Modal title="Máš toho víc?" onClose={()=>setMoreModal(false)} variant="top">
-          <div className="row">
-            <button className="btn" onClick={()=>{ setMoreModal(false); setScanOpen(true); }}>ANO</button>
-            <button className="btn secondary" onClick={()=>{ setMoreModal(false); sock.emit("acquire_finish_commit",{ gameId, playerId: my.playerId },()=>{}); }}>NE</button>
-          </div>
-        </Modal>
-      ) : null}
-
-      {lawyerOpen ? (
-        <Modal title="Právníci" onClose={()=>setLawyerOpen(false)} variant="top">
-          <div className="muted">Štít = preventivní ochrana proti lobbistům. Ikony trendů = ochrana proti trendům (pokud je to možné).</div>
-          <div style={{height:10}} />
-          <button className="btn" onClick={()=>sock.emit("lawyer_activate_preventive",{ gameId, playerId: my.playerId },()=>{})}>🛡️ Použít preventivně</button>
-          <div style={{height:10}} />
-          {trends.map(t=>(
-            <div key={t.id} className="rowLine">
-              <div style={{flex:1}}>{t.name}</div>
-              <button className="btn tiny" disabled={!canCounterTrend(t)} onClick={()=>sock.emit("lawyer_counter_trend",{ gameId, playerId: my.playerId, trendId: t.id },()=>{})}>Právník</button>
+function TrendsIntroBody({ gs, onOpenTrend, onOpenRegional }){
+  const y = gs?.year || 1;
+  const data = gs?.trends?.byYear?.[String(y)];
+  const regCls = (t)=>{
+    const k = String(t?.key||"");
+    const n = String(t?.name||"").toLowerCase();
+    if(k.includes("REG_INVESTMENT_BOOM") || n.includes("boom")) return "reg boom";
+    if(k.includes("REG_HIGH_EDUCATION") || n.includes("vzdělan") || n.includes("vzdelan")) return "reg edu";
+    if(k.includes("REG_STABILITY") || n.includes("stabil")) return "reg stable";
+    if(k.includes("REG_TAXES") || n.includes("dan")) return "reg tax";
+    return "reg";
+  };
+  return (
+    <div className="trendPreview">
+      <div className="trendPreviewBlock">
+        <div className="secTitle">Globální</div>
+        <div className="previewRow">
+          {(data?.globals||[]).map(t=>(
+            <div key={t.trendId} className="previewCard clickable" onClick={()=>onOpenTrend && onOpenTrend(t)} role="button" tabIndex={0}>
+              <div className="previewIcon">{t.icon||"🌐"}</div>
+              <div className="previewName">{t.name}</div>
             </div>
           ))}
-        </Modal>
-      ) : null}
+        </div>
+      </div>
 
-      {lobbyOpen ? (
-        <Modal title={`Lobbista – ${lobbyAction==="STEAL"?"steal":"sabotage"}`} onClose={()=>setLobbyOpen(false)} variant="top">
-          <div className="muted">Vyber protihráče. Tato volba je skrytá.</div>
-          <div style={{height:10}} />
-          {pub.players.filter(p=>p.playerId!==my.playerId).map(p=>(
-            <button key={p.playerId} className="chip" onClick={()=>{
-              sock.emit("lobbyist_action_select",{ gameId, playerId: my.playerId, action: lobbyAction, targetPlayerId: p.playerId },(res)=>{
-                if(res?.ok) setLobbyOpen(false);
-              });
-            }}>{p.name}</button>
+      <div className="trendPreviewBlock">
+        <div className="secTitle">Krypto</div>
+        <div className="previewRow">
+          <CryptoTrendPreview crypto={data?.crypto} />
+        </div>
+      </div>
+
+      <div className="trendPreviewBlock">
+        <div className="secTitle">Regionální</div>
+        <div className="regionalMini">
+          {Object.values(data?.regional||{}).map(t=>(
+            <div key={t.trendId} className="regionalDot">
+              <span>{t.continent}</span>
+              <button className={"regSymBtn "+regCls(t)} onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
+                <span className="regSymIcon">{t.icon || "📍"}</span>
+              </button>
+            </div>
           ))}
-        </Modal>
-      ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
+
+function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional }){
+  const y = gs?.year || 1;
+  const data = gs?.trends?.byYear?.[String(y)];
+
+  const regCls = (t)=>{
+    const k = String(t?.key||"");
+    const n = String(t?.name||"").toLowerCase();
+    if(k.includes("REG_INVESTMENT_BOOM") || n.includes("boom")) return "reg boom";
+    if(k.includes("REG_HIGH_EDUCATION") || n.includes("vzdělan") || n.includes("vzdelan")) return "reg edu";
+    if(k.includes("REG_STABILITY") || n.includes("stabil")) return "reg stable";
+    if(k.includes("REG_TAXES") || n.includes("dan")) return "reg tax";
+    return "reg";
+  };
+  return (
+    <div className="card">
+      <div className="titleRow">
+        <div>
+          <div className="title">Trendy • Rok {y}</div>
+          <div className="muted">nové aktivní trendy</div>
+        </div>
+        <button className="ghostBtn" onClick={onOpen}>Všechny trendy</button>
+      </div>
+
+      <div className="trendPreview">
+        <div className="trendPreviewBlock">
+          <div className="secTitle">Globální</div>
+          <div className="previewRow">
+            {(data?.globals||[]).map(t=>(
+              <div key={t.trendId} className="previewCard clickable" onClick={()=>onOpenTrend && onOpenTrend(t)} role="button" tabIndex={0}>
+                <div className="previewIcon">{t.icon||"🌐"}</div>
+                <div className="previewName">{t.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="trendPreviewBlock">
+          <div className="secTitle">Krypto</div>
+          <div className="previewRow">
+            <CryptoTrendPreview crypto={data?.crypto} />
+          </div>
+        </div>
+
+        <div className="trendPreviewBlock">
+          <div className="secTitle">Regionální</div>
+          <div className="regionalMini">
+            {Object.values(data?.regional||{}).map(t=>(
+              <div key={t.trendId} className="regionalDot">
+                <span>{t.continent}</span>
+                <button className={"regSymBtn "+regCls(t)} onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
+                  <span className="regSymIcon">{t.icon || "📍"}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function arrowForCoeff(k){
+  // Use text arrows so we can color them via CSS.
+  if(k>1) return { sym:"▲", cls:"up", label:"roste" };
+  if(k<1) return { sym:"▼", cls:"down", label:"klesá" };
+  return { sym:"→", cls:"flat", label:"beze změny" };
+}
+
+function CryptoTrendCard({ revealed, crypto }){
+  if(!revealed){
+    return (
+      <div className="trendCard wide back">
+        <div className="trendBack">❓</div>
+      </div>
+    );
+  }
+  const coeff = crypto?.coeff || {};
+  const coins = ["BTC","ETH","LTC","SIA"];
+  return (
+    <div className="trendCard wide cryptoCard">
+      <div className="trendTop">
+        <div className="trendIcon">₿</div>
+        <div className="trendTitle">{crypto?.name || "Kryptotrend"}</div>
+      </div>
+      <div className="cryptoGrid">
+        {coins.map(c=>{
+          const k = Number(coeff[c] ?? 1);
+          const a = arrowForCoeff(k);
+          return (
+            <div key={c} className={"cryptoRow "+a.cls}>
+              <div className="coin">{c}</div>
+              <div className="arrow">{a.sym}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CryptoTrendPreview({ crypto }){
+  const coeff = crypto?.coeff || {};
+  const coins = ["BTC","ETH","LTC","SIA"];
+  return (
+    <div className="previewCard wide cryptoPreview">
+      <div className="previewName">{crypto?.name || "Kryptotrend"}</div>
+      <div className="cryptoMiniGrid">
+        {coins.map(c=>{
+          const k = Number(coeff[c] ?? 1);
+          const a = arrowForCoeff(k);
+          return (
+            <div key={c} className={"cryptoMini "+a.cls}>
+              <span className="coin">{c}</span>
+              <span className="arrow">{a.sym}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TrendCard({ revealed, title, icon, wide, onClick, clickable }){
+  return (
+    <div className={"trendCard"+(wide?" wide":"")+(revealed?"":" back")+(clickable?" clickable":"")} onClick={revealed && clickable ? onClick : undefined} role={revealed && clickable ? "button" : undefined} tabIndex={revealed && clickable ? 0 : undefined}>
+      {revealed ? (
+        <>
+          <div className="trendIcon">{icon}</div>
+          <div className="trendName">{title}</div>
+        </>
+      ) : (
+        <>
+          <div className="trendIcon">❓</div>
+          <div className="trendName muted">Skryté</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AssetsPanel({ inv }){
+  return (
+    <div>
+      <div className="secTitle">Tradiční investice</div>
+      <div className="list">
+        {inv.investments.length? inv.investments.map(c=>(
+          <div key={c.cardId} className="listItem">
+            <div><b>{c.cardId}</b> • {c.name}</div>
+            <div className="muted">{c.continent} • {c.type} • +{c.usdProduction} USD/rok</div>
+          </div>
+        )) : <div className="muted">Zatím žádné.</div>}
+      </div>
+
+      <div className="secTitle" style={{marginTop:16}}>Mining farmy</div>
+      <div className="list">
+        {inv.miningFarms.length? inv.miningFarms.map(c=>(
+          <div key={c.cardId} className="listItem">
+            <div><b>{c.cardId}</b> • {c.name}</div>
+            <div className="muted">{c.crypto} • +{c.cryptoProduction} ks/rok • elektřina {c.electricityUSD} USD</div>
+          </div>
+        )) : <div className="muted">Zatím žádné.</div>}
+      </div>
+    </div>
+  );
+}
+
+function CardsPanel({ inv }){
+  const investments = inv?.investments || [];
+  const miningFarms = inv?.miningFarms || [];
+  const experts = inv?.experts || [];
+
+  const iconFor = (kind, item) => {
+    if(kind==="INVESTMENT"){
+      const t = String(item?.type||"").toUpperCase();
+      if(t.includes("AGRO")) return "🌿";
+      if(t.includes("MINING")) return "⛏️";
+      if(t.includes("INDUSTRY")) return "🏭";
+      if(t.includes("TECH")) return "🧠";
+      if(t.includes("LOGISTICS")) return "🚚";
+      if(t.includes("ENERGY")) return "⚡";
+      return "📈";
+    }
+    if(kind==="MINING_FARM") return "⚙️";
+    if(kind==="EXPERT"){
+      const k = String(item?.functionKey||"");
+      if(k.includes("LAWYER")) return "⚖️";
+      if(k.includes("LOBBY") || k.includes("STEAL")) return "🕴️";
+      if(k.includes("ANALYST")) return "🔎";
+      if(k.includes("CRYPTO")) return "🧬";
+      return "🧑‍💼";
+    }
+    return "🃏";
+  };
+
+  return (
+    <div className="cardsPanel">
+      <div className="cardsSection">
+        <div className="secTitle">Tradiční investice</div>
+        <div className="cardsGrid">
+          {investments.length ? investments.map(c=> (
+            <div key={c.cardId} className="cardTile">
+              <div className="tileTop">
+                <div className="tileIcon">{iconFor("INVESTMENT", c)}</div>
+                <div className="tileMeta">
+                  <div className="tileTitle">{c.name}</div>
+                  <div className="tileSub">{c.continent} • {c.type}</div>
+                </div>
+              </div>
+              <div className="tileBottom">
+                <div className="tileId">{c.cardId}</div>
+                <div className="tileVal">+{c.usdProduction} USD/rok</div>
+              </div>
+            </div>
+          )) : <div className="muted">Zatím žádné.</div>}
+        </div>
+      </div>
+
+      <div className="cardsSection">
+        <div className="secTitle">Mining farmy</div>
+        <div className="cardsGrid">
+          {miningFarms.length ? miningFarms.map(c=> (
+            <div key={c.cardId} className="cardTile">
+              <div className="tileTop">
+                <div className="tileIcon">{iconFor("MINING_FARM", c)}</div>
+                <div className="tileMeta">
+                  <div className="tileTitle">{c.name}</div>
+                  <div className="tileSub">{c.crypto} • +{c.cryptoProduction} ks/rok</div>
+                </div>
+              </div>
+              <div className="tileBottom">
+                <div className="tileId">{c.cardId}</div>
+                <div className="tileVal neg">−{c.electricityUSD} USD elektřina</div>
+              </div>
+            </div>
+          )) : <div className="muted">Zatím žádné.</div>}
+        </div>
+      </div>
+
+      <div className="cardsSection">
+        <div className="secTitle">Experti</div>
+        <div className="cardsGrid">
+          {experts.length ? experts.map(e=> (
+            <div key={e.cardId} className={"cardTile"+(e.used?" used":"")}> 
+              <div className="tileTop">
+                <div className="tileIcon">{iconFor("EXPERT", e)}</div>
+                <div className="tileMeta">
+                  <div className="tileTitle">{e.functionLabel}</div>
+                  <div className="tileSub">{e.functionDesc}</div>
+                </div>
+              </div>
+              <div className="tileBottom">
+                <div className="tileId">{e.cardId}</div>
+                <div className={"pill"+(e.used?" dim":"")}>{e.used?"použito":"k dispozici"}</div>
+              </div>
+            </div>
+          )) : <div className="muted">Zatím žádní.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExpertsPanel({ inv }){
+  return (
+    <div className="list">
+      {inv.experts.length? inv.experts.map(e=>(
+        <div key={e.cardId} className="listItem">
+          <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+            <div><b>{e.cardId}</b> • {e.functionLabel}</div>
+            <div className={"pill"+(e.used?" dim":"")}>{e.used?"použito":"k dispozici"}</div>
+          </div>
+          <div className="muted">{e.functionDesc}</div>
+        </div>
+      )) : <div className="muted">Zatím žádné.</div>}
+    </div>
+  );
+}
+
+function AccountingPanel({ gs, playerId, gameId }){
+  const inv = gs?.inventory?.[playerId] || { investments:[], miningFarms:[], experts:[] };
+  const baseUsd = (inv.investments||[]).reduce((s,c)=>s + Number(c.usdProduction||0), 0);
+  // (v3 test) region/global bonus rules are not fully encoded; show nominal placeholders.
+  const regionalBonusUsd = 0;
+  const globalBonusUsd = 0;
+
+  const electricityUsd = (inv.miningFarms||[]).reduce((s,c)=>s + Number(c.electricityUSD||0), 0);
+  const cryptoProd = { BTC:0, ETH:0, LTC:0, SIA:0 };
+  for(const mf of (inv.miningFarms||[])){
+    const sym = mf.crypto;
+    if(sym && cryptoProd[sym]!=null) cryptoProd[sym] += Number(mf.cryptoProduction||0);
+  }
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  function openPreview(){
+    setPreviewOpen(true);
+    setLoading(true);
+
+    s.emit("preview_audit", { gameId, playerId }, (res)=>{
+      setLoading(false);
+      if(!res?.ok){
+        setPreview({ error: res?.error || "Chyba" });
+      }else{
+        setPreview({ settlementUsd: res.settlementUsd, breakdown: res.breakdown||[] });
+      }
+    });
+  }
+
+  return (
+    <div>
+      <button className="ghostBtn full" onClick={openPreview}>Předběžný audit</button>
+
+      <div className="secTitle" style={{marginTop:12}}>Tradiční investice</div>
+      <div className="list">
+        <div className="listItem" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>Základní produkce</div>
+          <div style={{fontWeight:900,color:"var(--primary)"}}>+{baseUsd} USD</div>
+        </div>
+        <div className="listItem" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>Regionální bonus</div>
+          <div style={{fontWeight:900,color:"var(--primary)"}}>+{regionalBonusUsd} USD</div>
+        </div>
+        <div className="listItem" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>Globální bonus</div>
+          <div style={{fontWeight:900,color:"var(--primary)"}}>+{globalBonusUsd} USD</div>
+        </div>
+      </div>
+
+      <div className="secTitle" style={{marginTop:16}}>Mining farmy</div>
+      <div className="list">
+        <div className="listItem" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>Elektřina</div>
+          <div style={{fontWeight:900,color:"var(--danger)"}}>−{electricityUsd} USD</div>
+        </div>
+        {(["BTC","ETH","LTC","SIA"]).map(sym=>{
+          const v = cryptoProd[sym] || 0;
+          return (
+            <div key={sym} className="listItem" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>{sym} produkce / rok</div>
+              <div style={{fontWeight:900,color:"var(--primary)"}}>+{v} ks</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {previewOpen ? (
+        <SuperTopModal title="Předběžný audit" onClose={()=>setPreviewOpen(false)}>
+          {loading ? (
+            <div className="muted">Počítám…</div>
+          ) : preview?.error ? (
+            <div className="muted">{preview.error}</div>
+          ) : (
+            <>
+              <div className="bigNumber">{(preview?.settlementUsd||0)>=0?"+":""}{preview?.settlementUsd||0} USD</div>
+              <div className="secTitle">Rozpad</div>
+              <div className="list">
+                {(preview?.breakdown||[]).map((b, idx)=>(
+                  <div key={idx} className="listItem" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>{b.label}</div>
+                    <div style={{fontWeight:900}}>{b.usd>=0?"+":""}{b.usd} USD</div>
+                  </div>
+                ))}
+              </div>
+              <div className="muted" style={{marginTop:10}}>
+                Pozn.: Předběžný audit je simulace pro test (nezavírá rok).
+              </div>
+            </>
+          )}
+        </SuperTopModal>
+      ) : null}
     </div>
   );
 }

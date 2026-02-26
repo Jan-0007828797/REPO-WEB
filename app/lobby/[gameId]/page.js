@@ -15,13 +15,20 @@ export default function Lobby(){
   useEffect(()=>{ (async ()=>{ if(!joinUrl) return; setQr(await QRCode.toDataURL(joinUrl,{margin:2,width:420,errorCorrectionLevel:'H'})); })(); },[joinUrl]);
   useEffect(()=>{
     const s=getSocket();
-    s.emit("watch_lobby",{gameId},()=>{}); 
+    s.emit("watch_lobby",{gameId},()=>{});
+    // Extra safety: ensure we are subscribed to full game state too
+    s.emit("watch_game",{gameId},()=>{});
     const onUpd=(p)=>{ if(p?.gameId!==gameId) return; setPlayers(p.players||[]); setCfg(p.config||null); };
     const onStarted=()=>r.push(`/game/${gameId}`);
     s.on("lobby_update", onUpd);
-        s.on("game_started", onStarted);
-        // No polling interval is used here; cleanup only event listeners.
-        return ()=>{ s.off("lobby_update", onUpd); s.off("game_started", onStarted); };
+    const onState=(gs)=>{ if(gs?.gameId!==gameId) return; if(gs?.players) setPlayers(gs.players); if(gs?.config) setCfg(gs.config); };
+    s.on("game_state", onState);
+    s.on("game_started", onStarted);
+    // Safety refresh: some mobiles reconnect sockets silently
+    const t = setInterval(()=>{ s.emit("watch_lobby",{gameId},()=>{});
+    // Extra safety: ensure we are subscribed to full game state too
+    s.emit("watch_game",{gameId},()=>{}); }, 2000);
+    return ()=>{ clearInterval(t); s.off("lobby_update", onUpd); s.off("game_state", onState); s.off("game_started", onStarted); };
   },[gameId,r]);
   function start(){ const s=getSocket(); s.emit("start_game",{gameId},()=>{}); }
   const canStart = isGM && cfg && players.length>=1;
