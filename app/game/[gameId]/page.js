@@ -809,7 +809,7 @@ export default function GamePage(){
             <div className="muted" style={{marginBottom:12}}>Ovládání fází (pouze GM). Nemá rušit hráče.</div>
             <div className="ctaRow">
               <button className="secondaryBtn big full" onClick={()=>{ gmBack(); setGmPanelOpen(false); }}>← Zpět</button>
-              <button className="primaryBtn big full" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Další krok →</button>
+              <button className="primaryBtn big full gmNextBtn" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Další krok →</button>
             </div>
           </div>
         </Modal>

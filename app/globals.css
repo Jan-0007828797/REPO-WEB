@@ -29,6 +29,10 @@
   --neoAmber:#fbbf24;
   --danger:#fb7185;
 
+  /* aliases used across legacy components */
+  --primary: var(--neoMint);
+  --accent: var(--neoCyan);
+
   /* effects */
   --shadow: 0 14px 40px rgba(0,0,0,.45);
   --shadowSoft: 0 10px 26px rgba(0,0,0,.28);
@@ -624,6 +628,7 @@ button{ font-family:inherit; }
 .primaryBtn{
   background: linear-gradient(90deg, var(--primary), var(--accent));
   color:#06101b;
+  box-shadow: 0 0 0 4px rgba(56,189,248,.10), 0 0 22px rgba(52,211,153,.22);
 }
 .primaryBtn.disabled{ opacity:.55; cursor:not-allowed; }
 .ghostBtn{
@@ -640,6 +645,14 @@ button{ font-family:inherit; }
 .ghostBtn:hover, .secondaryBtn:hover{ filter: brightness(1.08); }
 .primaryBtn.big, .ghostBtn.big, .secondaryBtn.big{ width: 100%; font-size: 18px; padding: 16px 14px; }
 .full{ width:100%; margin-top: 10px; }
+
+/* GM “next phase” must stand out from player confirms, but stay in the same GM top-right bar */
+.gmNextBtn{
+  background: linear-gradient(90deg, #FF3D00, #FFB300) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 4px rgba(255,61,0,.14), 0 0 26px rgba(255,61,0,.35) !important;
+}
+.gmNextBtn:hover{ filter: brightness(1.05); }
 .checkRow{ display:flex; align-items:center; gap:10px; color: var(--muted); font-weight: 700; }
 
 .toast{
