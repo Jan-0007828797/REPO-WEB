@@ -25,6 +25,23 @@ function SuperTopModal({ title, onClose, children }){
   );
 }
 
+function GmTopModal({ title, onClose, children }){
+  // GM overlays must be un-blockable (GM needs to always be able to advance / resolve).
+  useEffect(()=>{ const onKey=(e)=>{ if(e.key==="Escape") onClose?.(); }; window.addEventListener("keydown", onKey); return ()=>window.removeEventListener("keydown", onKey); },[onClose]);
+  return (
+    <div className="modalBackdrop top superTop gmPriority" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
+      <div className="modal">
+        <div className="modalHeader">
+          <div style={{fontWeight:900,fontSize:18}}>{title}</div>
+          <button className="iconBtn" onClick={onClose}>✕</button>
+        </div>
+        <div style={{height:1,background:"rgba(255,255,255,.10)",margin:"12px 0"}}></div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function badgeFor(kind){
   if(kind==="ML") return { emoji:"🟩", label:"MARKET LEADER" };
   if(kind==="AUCTION") return { emoji:"🟨", label:"DRAŽBA – OBÁLKA" };
@@ -442,7 +459,12 @@ export default function GamePage(){
           <div className="topHeaderRight">
             {gs?.year ? <div className="yearPill">Rok {gs.year}</div> : null}
             {isGM ? (
-              <button className="gmFab" onClick={()=>setGmPanelOpen(true)} aria-label="GM panel">
+	              <button
+	                className={"gmFab "+(gs?.gmAdvance?.ready ? "ready" : "pending")}
+	                onClick={()=>setGmPanelOpen(true)}
+	                aria-label="GM panel"
+	                title={gs?.gmAdvance?.ready ? "Všichni hráči rozhodli" : "Čekám na hráče"}
+	              >
                 GM
               </button>
             ) : null}
@@ -820,8 +842,9 @@ export default function GamePage(){
 
       <BottomBar onTab={setTab} active={tab} />
 
-      {gmPanelOpen && isGM && gs?.status==="IN_PROGRESS" ? (
-        <Modal title="GM panel" onClose={()=>setGmPanelOpen(false)} variant="top">
+	      {/* GM panel must ALWAYS be above any other overlay (otherwise GM could get stuck). */}
+	      {gmPanelOpen && isGM && gs?.status==="IN_PROGRESS" ? (
+	        <GmTopModal title="GM panel" onClose={()=>setGmPanelOpen(false)}>
           <div className="gmPanel">
             <div className="muted" style={{marginBottom:12}}>Ovládání fází (pouze GM). Nemá rušit hráče.</div>
             <div className="ctaRow">
@@ -829,12 +852,12 @@ export default function GamePage(){
               <button className="primaryBtn big full gmNextBtn" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Další krok →</button>
             </div>
           </div>
-        </Modal>
+	        </GmTopModal>
       ) : null}
 
       {/* GM assist OK: appears ONLY when all players committed their definitive decision in the current step */}
       {gmOkOpen && isGM && gs?.status==="IN_PROGRESS" && gs?.gmAdvance?.ready ? (
-        <SuperTopModal
+	        <GmTopModal
           title="Všichni hráči rozhodli"
           onClose={()=>setGmOkOpen(false)}
         >
@@ -845,7 +868,7 @@ export default function GamePage(){
               onClick={()=>{ gmNext(); setGmOkOpen(false); }}
             >OK</button>
           </div>
-        </SuperTopModal>
+	        </GmTopModal>
       ) : null}
 
       {/* Market pick: definitive confirmation popup (player cannot change choice) */}
