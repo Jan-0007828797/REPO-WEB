@@ -33,35 +33,21 @@ function badgeFor(kind){
   return { emoji:"", label:"" };
 }
 
-
 function StepIcons({ phase, bizStep }){
-  // Fixed screens (phases) – change only when GM advances.
-  const activeKey = (() => {
-    if(phase==="BIZ"){
-      if(bizStep==="ML_BID") return "ML";
-      if(bizStep==="MOVE") return "MOVE";
-      if(bizStep==="AUCTION_ENVELOPE") return "AUCTION";
-      if(bizStep==="ACQUIRE") return "ACQUIRE";
-      return "ML";
-    }
-    if(phase==="CRYPTO") return "CRYPTO";
-    if(phase==="SETTLE") return "AUDIT";
+  if(phase!=="BIZ"){
     return null;
-  })();
-
+  }
   const steps = [
-    { key:"ML", label:"Market Leader", icon:"👑" },
-    { key:"MOVE", label:"Výběr trhu", icon:"📍" },
-    { key:"AUCTION", label:"Dražba", icon:"✉️" },
+    { key:"TRENDS", label:"Trendy", icon:"🗺️" },
+    { key:"ML_BID", label:"Market Leader", icon:"👑" },
+    { key:"MOVE", label:"Investice", icon:"📍" },
+    { key:"AUCTION_ENVELOPE", label:"Dražba", icon:"✉️" },
     { key:"ACQUIRE", label:"Akvizice", icon:"📷" },
-    { key:"CRYPTO", label:"Kryptoburza", icon:"₿" },
-    { key:"AUDIT", label:"Audit", icon:"🧾" },
   ];
-
   return (
     <div className="stepRow">
       {steps.map(s=>{
-        const active = s.key===activeKey;
+        const active = s.key===bizStep;
         return (
           <div key={s.key} className={"stepChip"+(active?" active":"")}>
             <span className="stepIcon">{s.icon}</span>
@@ -72,7 +58,6 @@ function StepIcons({ phase, bizStep }){
     </div>
   );
 }
-
 
 function PrivacyCard({ kind, mode, amountText, onReveal, onHide, onClose }){
   const b = badgeFor(kind);
@@ -119,19 +104,7 @@ export default function GamePage(){
   const [tab, setTab] = useState(null);
   const [gmPanelOpen, setGmPanelOpen] = useState(false);
   const [trendModal, setTrendModal] = useState(null); // {name, icon, desc}
-  const [regionalModal, setRegionalModal] = useState(null);
-  const [mlIntroOpen, setMlIntroOpen] = useState(false);
-  const mlIntroYearRef = useRef(null);
-
-  const [gmReadyOpen, setGmReadyOpen] = useState(false);
-  const gmReadyKeyRef = useRef("");
-
-  // Auction lobbyist intel (private)
-  const [aucIntel, setAucIntel] = useState(null); // {intel:[{playerId,name,bidUsd}]}
-
-  // Acquire finish prompt
-  const [acqMoreOpen, setAcqMoreOpen] = useState(false);
- // {continent, name, icon, desc}
+  const [regionalModal, setRegionalModal] = useState(null); // {continent, name, icon, desc}
 
   // local privacy modes
   const [mlPrivacy, setMlPrivacy] = useState("edit");       // edit|hidden|reveal
@@ -170,36 +143,19 @@ export default function GamePage(){
 
   useEffect(()=>{
 
-    s.emit("watch_game", { gameId, playerId }, (res)=>{
+    s.emit("watch_game", { gameId }, (res)=>{
       if(!res?.ok) setErr(res?.error || "Nelze načíst hru.");
     });
     const onState = (state)=>{
       if(state?.gameId!==gameId) return;
       setGs(state);
     };
-    const onIntel = (payload)=>{
-      if(payload?.gameId!==gameId) return;
-      // Private lobbyist intel – open modal (privacy preserved)
-      setAucIntel({ intel: payload.intel || [] });
-      playRing();
-    };
-    s.on("auction_intel", onIntel);
-
     s.on("game_state", onState);
-    return ()=>{ s.off("game_state", onState); s.off("auction_intel", onIntel); };
+    return ()=> s.off("game_state", onState);
   }, [gameId]);
 
   const me = gs?.players?.find(p=>p.playerId===playerId) || null;
   const isGM = me?.role==="GM";
-  // Market Leader screen starts with Trends intro popup (can be closed).
-  useEffect(()=>{
-    if(!gs?.year) return;
-    if(gs?.phase!=="BIZ" || gs?.bizStep!=="ML_BID") return;
-    if(mlIntroYearRef.current === gs.year) return;
-    mlIntroYearRef.current = gs.year;
-    setMlIntroOpen(true);
-  }, [gs?.phase, gs?.bizStep, gs?.year]);
-
 
   // Sound logic: clock during interactive steps (except Trends)
   useEffect(()=>{
@@ -215,16 +171,17 @@ export default function GamePage(){
 
     if(shouldClock) playClock(); else stopClock();
 
-    // lobbyist ringing: only for players who received private intel and have not sent final bid
+    // lobbyist ringing for users who used lobbyist and need final bid
     if(phase==="BIZ" && bizStep==="AUCTION_ENVELOPE"){
       const entry = gs?.biz?.auction?.entries?.[playerId];
-      if(aucIntel && entry?.usedLobbyist && !entry?.finalCommitted){
+      const active = !!gs?.biz?.auction?.lobbyistPhaseActive;
+      if(active && entry?.usedLobbyist && !entry?.finalCommitted){
         playRing();
       }else{
         stopRing();
       }
     }
-  }, [gs, playerId, aucIntel]);
+  }, [gs, playerId]);
 
   // Load preview when entering SETTLE and not yet committed
   useEffect(()=>{
@@ -393,17 +350,6 @@ export default function GamePage(){
     setScanPreview(null);
     setScanOn(false);
     setTimeout(()=>{ setScanOn(true); }, 250);
-
-  function commitAcquireNoCard(){
-    s.emit("commit_acquire", { gameId, playerId, gotAny:false }, (res)=>{
-      if(!res?.ok) setErr(res?.error||"Chyba");
-    });
-  }
-  function commitAcquireDone(){
-    s.emit("commit_acquire", { gameId, playerId, gotAny:true }, (res)=>{
-      if(!res?.ok) setErr(res?.error||"Chyba");
-    });
-  }
   }
 
   // derived display amounts
@@ -680,28 +626,8 @@ export default function GamePage(){
                 <div className="scanIdleText">Skener je vypnutý. Zapni ho a naskenuj své karty.</div>
               </div>
             )}
-
-            {(() => {
-              const committed = !!gs?.biz?.acquire?.[playerId]?.committed;
-              return (
-                <>
-                  {committed ? (
-                    <div className="muted" style={{marginTop:12}}>Hotovo. Čekám na ostatní hráče…</div>
-                  ) : (
-                    <div style={{marginTop:12, display:"grid", gap:10}}>
-                      <button className="primaryBtn big full" onClick={()=>{ setScanErr(""); setScanOn(true); }}>
-                        Získal jsem kartu
-                      </button>
-                      <button className="secondaryBtn big full" onClick={commitAcquireNoCard}>
-                        Nezískal jsem kartu
-                      </button>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-
-          </div>        ) : gs.phase==="CRYPTO" ? (
+          </div>
+        ) : gs.phase==="CRYPTO" ? (
           <div className="card phaseCard">
             <div className="phaseHeader">
               <div className="phaseLeft">
@@ -711,6 +637,58 @@ export default function GamePage(){
                   <div className="phaseSub">Naklikej změny v kusech. Pak potvrď. Ukazovací režim skryje detaily.</div>
                 </div>
               </div>
+            </div>
+            <div className="cryptoList">
+              {["BTC","ETH","LTC","SIA"].map(sym=>{
+                const rate = gs.crypto?.rates?.[sym] || 0;
+                const val = cryptoD[sym] || 0;
+                const owned = me?.wallet?.crypto?.[sym] ?? 0;
+                const lineUsd = -val * rate; // positive = gain (sell), negative = cost (buy)
+                return (
+                  <div key={sym} className="cryptoRow">
+                    <div className="cryptoMeta">
+                      <div className="cryptoSym">{sym}</div>
+                      <div className="cryptoMetaLine">
+                        <div className="muted">{rate} USD/ks</div>
+                        <div className="cryptoOwnedWrap">
+                          <div className="cryptoOwnedLabel">Vlastním</div>
+                          <div className="cryptoOwned">{owned}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="cryptoCtrls">
+                      <button
+                        className="ghostBtn"
+                        onClick={()=>{
+                          const next = val-1;
+                          // selling (negative) cannot exceed owned
+                          if(next < 0 && Math.abs(next) > owned) return;
+                          setCryptoD({...cryptoD, [sym]: next});
+                        }}
+                      >−</button>
+                      <div className="cryptoVal">{val}</div>
+                      <button
+                        className="ghostBtn"
+                        onClick={()=>{
+                          const next = val+1;
+                          setCryptoD({...cryptoD, [sym]: next});
+                        }}
+                      >+</button>
+                    </div>
+                    <div className={"cryptoLineUsd "+(lineUsd>0?"pos":lineUsd<0?"neg":"neu")}>
+                      {lineUsd>0?`+${lineUsd} USD`:lineUsd<0?`${lineUsd} USD`:`0 USD`}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="cryptoTotal">
+              {(()=>{
+                const total = ["BTC","ETH","LTC","SIA"].reduce((acc,sym)=> acc + (-(cryptoD[sym]||0) * (gs.crypto?.rates?.[sym]||0)), 0);
+                const cls = total>0?"pos":total<0?"neg":"neu";
+                const txt = total>0?`+${total} USD`:total<0?`${total} USD`:`0 USD`;
+                return <div className={"cryptoTotalVal "+cls}>Celkem: {txt}</div>;
+              })()}
             </div>
             <button className="primaryBtn full" onClick={commitCrypto}>Potvrdit transakci</button>
             <button className="ghostBtn full" onClick={()=>{ setCryptoD({BTC:0,ETH:0,LTC:0,SIA:0}); commitCrypto(); }}>Neobchoduji</button>
@@ -799,54 +777,6 @@ export default function GamePage(){
       </div>
 
       <BottomBar onTab={setTab} active={tab} />
-
-
-      {mlIntroOpen && gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" ? (
-        <SuperTopModal title={`Trendy • Rok ${gs?.year||""}`} onClose={()=>setMlIntroOpen(false)}>
-          <div className="muted" style={{marginBottom:10}}>Aktivní trendy pro tento rok. Zavři OK a pokračuj v nabídce Market Leadera.</div>
-          <TrendsIntroBody gs={gs} onOpenTrend={(t)=>setTrendModal(t)} onOpenRegional={(t)=>setRegionalModal(t)} />
-          <div style={{marginTop:14}}>
-            <button className="primaryBtn big full" onClick={()=>setMlIntroOpen(false)}>OK</button>
-          </div>
-        </SuperTopModal>
-      ) : null}
-
-      {isGM && gmReadyOpen ? (
-        <SuperTopModal title="Všichni hotovo" onClose={()=>setGmReadyOpen(false)}>
-          <div className="muted" style={{marginBottom:12}}>Všichni hráči provedli definitivní volbu v této fázi.</div>
-          <button className="primaryBtn big full" onClick={()=>setGmReadyOpen(false)}>OK</button>
-          <div className="muted" style={{marginTop:10}}>Posuň hru přes GM tlačítko vpravo nahoře.</div>
-        </SuperTopModal>
-      ) : null}
-
-      {aucIntel ? (
-        <SuperTopModal title="Lobbista – poslední šance" onClose={()=>{ setAucIntel(null); stopRing(); }}>
-          <div className="muted" style={{marginBottom:10}}>Vidíš nabídky protihráčů. Můžeš upravit svou nabídku a potvrdit finální rozhodnutí.</div>
-          <div className="cardInner" style={{padding:0}}>
-            {(aucIntel.intel||[]).map(r=>(
-              <div key={r.playerId} className="row" style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
-                <div>{r.name}</div>
-                <div style={{fontWeight:800}}>{r.bidUsd===null ? "Nechce dražit" : `${r.bidUsd} USD`}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{marginTop:12, display:"grid", gap:10}}>
-            <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucFinalBid} onChange={(e)=>setAucFinalBid(e.target.value.replace(/[^\d]/g,""))} />
-            <button className="primaryBtn big full" onClick={()=>{ commitFinalAuction(aucFinalBid===""?0:Number(aucFinalBid)); setAucIntel(null); stopRing(); }}>Potvrdit finální nabídku</button>
-            <button className="ghostBtn full" onClick={()=>{ setAucIntel(null); stopRing(); }}>Zavřít</button>
-          </div>
-        </SuperTopModal>
-      ) : null}
-
-      {acqMoreOpen ? (
-        <SuperTopModal title="Máš toho víc?" onClose={()=>setAcqMoreOpen(false)}>
-          <div className="muted" style={{marginBottom:12}}>Chceš naskenovat další kartu?</div>
-          <div style={{display:"grid", gap:10}}>
-            <button className="primaryBtn big full" onClick={()=>{ setAcqMoreOpen(false); setScanOn(true); }}>ANO</button>
-            <button className="secondaryBtn big full" onClick={()=>{ setAcqMoreOpen(false); commitAcquireDone(); }}>NE</button>
-          </div>
-        </SuperTopModal>
-      ) : null}
 
       {gmPanelOpen && isGM && gs?.status==="IN_PROGRESS" ? (
         <Modal title="GM panel" onClose={()=>setGmPanelOpen(false)} variant="top">
@@ -1209,58 +1139,6 @@ function TrendsPanel({ gs, playerId, onOpenTrend, onOpenRegional, onRevealGlobal
     </div>
   );
 }
-
-
-function TrendsIntroBody({ gs, onOpenTrend, onOpenRegional }){
-  const y = gs?.year || 1;
-  const data = gs?.trends?.byYear?.[String(y)];
-  const regCls = (t)=>{
-    const k = String(t?.key||"");
-    const n = String(t?.name||"").toLowerCase();
-    if(k.includes("REG_INVESTMENT_BOOM") || n.includes("boom")) return "reg boom";
-    if(k.includes("REG_HIGH_EDUCATION") || n.includes("vzdělan") || n.includes("vzdelan")) return "reg edu";
-    if(k.includes("REG_STABILITY") || n.includes("stabil")) return "reg stable";
-    if(k.includes("REG_TAXES") || n.includes("dan")) return "reg tax";
-    return "reg";
-  };
-  return (
-    <div className="trendPreview">
-      <div className="trendPreviewBlock">
-        <div className="secTitle">Globální</div>
-        <div className="previewRow">
-          {(data?.globals||[]).map(t=>(
-            <div key={t.trendId} className="previewCard clickable" onClick={()=>onOpenTrend && onOpenTrend(t)} role="button" tabIndex={0}>
-              <div className="previewIcon">{t.icon||"🌐"}</div>
-              <div className="previewName">{t.name}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="trendPreviewBlock">
-        <div className="secTitle">Krypto</div>
-        <div className="previewRow">
-          <CryptoTrendPreview crypto={data?.crypto} />
-        </div>
-      </div>
-
-      <div className="trendPreviewBlock">
-        <div className="secTitle">Regionální</div>
-        <div className="regionalMini">
-          {Object.values(data?.regional||{}).map(t=>(
-            <div key={t.trendId} className="regionalDot">
-              <span>{t.continent}</span>
-              <button className={"regSymBtn "+regCls(t)} onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
-                <span className="regSymIcon">{t.icon || "📍"}</span>
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 
 function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional }){
   const y = gs?.year || 1;
