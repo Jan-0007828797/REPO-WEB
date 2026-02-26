@@ -243,15 +243,22 @@ button{ font-family:inherit; }
 }
 
 .gmFab{
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  z-index: 10000; /* Highest priority: always above any modal/popup */
   border-radius: 999px;
-  padding: 8px 12px;
-  border: 1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.06);
-  color: rgba(245,247,255,.92);
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,.20);
+  background: rgba(10,18,36,.78);
+  color: rgba(245,247,255,.96);
   font-weight: 950;
   letter-spacing: .08em;
   cursor:pointer;
+  box-shadow: 0 10px 26px rgba(0,0,0,.40), 0 0 0 3px rgba(56,189,248,.10);
+  backdrop-filter: blur(10px);
 }
+.gmFab:hover{ filter: brightness(1.06); }
 .gmFab:active{ transform: translateY(1px); }
 
 .yearPill{
