@@ -432,7 +432,8 @@ button{ font-family:inherit; }
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 35;
+  /* Must stay clickable even when modals are open */
+  z-index: 7000;
   display:flex;
   justify-content: space-around;
   gap: 6px;
@@ -502,7 +503,8 @@ button{ font-family:inherit; }
 .privacyBackdrop{
   position: fixed;
   inset: 0;
-  z-index: 12000;
+  /* Keep bottom navigation always accessible */
+  z-index: 6500;
   background: rgba(6,9,18,.92);
   backdrop-filter: blur(10px);
   display:flex;

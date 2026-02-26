@@ -33,25 +33,33 @@ function badgeFor(kind){
   return { emoji:"", label:"" };
 }
 
-function StepIcons({ phase, bizStep }){
-  if(phase!=="BIZ"){
-    return null;
-  }
-  const steps = [
-    { key:"TRENDS", label:"Trendy", icon:"🗺️" },
+function PhaseBar({ phase, bizStep }){
+  // Top bar: always show the whole game flow (no popups; fixed screens).
+  // Trends are NOT a phase anymore (still available via bottom tab "Trendy").
+  const phases = [
     { key:"ML_BID", label:"Market Leader", icon:"👑" },
-    { key:"MOVE", label:"Investice", icon:"📍" },
+    { key:"MOVE", label:"Výběr trhu", icon:"📍" },
     { key:"AUCTION_ENVELOPE", label:"Dražba", icon:"✉️" },
     { key:"ACQUIRE", label:"Akvizice", icon:"📷" },
+    { key:"CRYPTO", label:"Kryptoburza", icon:"₿" },
+    { key:"SETTLE", label:"Audit", icon:"🧾" },
   ];
+
+  const activeKey = (()=>{
+    if(phase==="BIZ") return bizStep;
+    if(phase==="CRYPTO") return "CRYPTO";
+    if(phase==="SETTLE") return "SETTLE";
+    return null;
+  })();
+
   return (
-    <div className="stepRow">
-      {steps.map(s=>{
-        const active = s.key===bizStep;
+    <div className="stepRow" aria-label="Fáze hry">
+      {phases.map(p=>{
+        const active = p.key===activeKey;
         return (
-          <div key={s.key} className={"stepChip"+(active?" active":"")}>
-            <span className="stepIcon">{s.icon}</span>
-            <span className="stepText">{s.label}</span>
+          <div key={p.key} className={"stepChip"+(active?" active":"")}>
+            <span className="stepIcon">{p.icon}</span>
+            <span className="stepText">{p.label}</span>
           </div>
         );
       })}
@@ -105,6 +113,7 @@ export default function GamePage(){
   const [gmPanelOpen, setGmPanelOpen] = useState(false);
   const [trendModal, setTrendModal] = useState(null); // {name, icon, desc}
   const [regionalModal, setRegionalModal] = useState(null); // {continent, name, icon, desc}
+  const [mlTrendIntroOpen, setMlTrendIntroOpen] = useState(false);
 
   // local privacy modes
   const [mlPrivacy, setMlPrivacy] = useState("edit");       // edit|hidden|reveal
@@ -138,6 +147,8 @@ export default function GamePage(){
   const [scanOn, setScanOn] = useState(false);
   const [scanErr, setScanErr] = useState("");
   const [scanPreview, setScanPreview] = useState(null); // {card}
+  const [acqMoreOpen, setAcqMoreOpen] = useState(false);
+  const [acqHadAny, setAcqHadAny] = useState(false);
   const videoRef = useRef(null);
   const codeReader = useMemo(()=> new BrowserMultiFormatReader(), []);
 
@@ -165,7 +176,7 @@ export default function GamePage(){
     if(!phase) { stopClock(); return; }
 
     const shouldClock =
-      (phase==="BIZ" && bizStep && bizStep!=="TRENDS") ||
+      (phase==="BIZ" && bizStep) ||
       (phase==="CRYPTO") ||
       (phase==="SETTLE");
 
@@ -204,6 +215,7 @@ export default function GamePage(){
       const committed = !!gs?.biz?.mlBids?.[playerId]?.committed;
       setMlPrivacy(committed ? "hidden" : "edit");
       setMlOverlayOpen(true);
+      setMlTrendIntroOpen(true);
     }
     if(phase==="BIZ" && step==="AUCTION_ENVELOPE"){
       const committed = !!gs?.biz?.auction?.entries?.[playerId]?.committed;
@@ -226,6 +238,8 @@ export default function GamePage(){
       setScanOn(false);
       setScanErr("");
       setScanPreview(null);
+      setAcqMoreOpen(false);
+      setAcqHadAny(false);
     }
   }, [gs?.phase, gs?.bizStep, gs?.year]);
 
@@ -252,7 +266,22 @@ export default function GamePage(){
         const back = pickBackCamera(devices);
         const deviceId = back?.deviceId || devices[0].deviceId;
 
-        await codeReader.decodeFromVideoDevice(deviceId, videoRef.current, (result)=>{
+        // Higher resolution helps with small QR codes.
+        const constraints = {
+          audio: false,
+          video: {
+            deviceId: { exact: deviceId },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            facingMode: { ideal: "environment" },
+            advanced: [
+              // Not all browsers/devices support this, but it's safe to request.
+              { focusMode: "continuous" }
+            ]
+          }
+        };
+
+        await codeReader.decodeFromConstraints(constraints, videoRef.current, (result)=>{
           if(!active) return;
           if(result){
             const raw = String(result.getText()||"").trim();
@@ -336,20 +365,27 @@ export default function GamePage(){
     });
   }
 
+  function commitAcquire({ gotCard }){
+    s.emit("commit_acquire", { gameId, playerId, gotCard: !!gotCard }, (res)=>{
+      if(!res?.ok) setErr(res?.error||"Chyba");
+    });
+  }
+
   function acceptScannedCard(cardId){
     s.emit("claim_card", { gameId, playerId, cardId }, (res)=>{
-      if(!res?.ok) setErr(res?.error||"Chyba");
+      if(!res?.ok) return setErr(res?.error||"Chyba");
       setScanPreview(null);
-      // Resume scanning if still in ACQUIRE
+      setAcqHadAny(true);
       setScanOn(false);
-      setTimeout(()=>{ setScanOn(true); }, 250);
+      setAcqMoreOpen(true);
     });
   }
 
   function rejectScannedCard(){
     setScanPreview(null);
+    // back to scanner immediately
     setScanOn(false);
-    setTimeout(()=>{ setScanOn(true); }, 250);
+    setTimeout(()=>{ setScanOn(true); }, 200);
   }
 
   // derived display amounts
@@ -395,7 +431,7 @@ export default function GamePage(){
             ) : null}
           </div>
         </div>
-        <StepIcons phase={gs?.phase} bizStep={gs?.bizStep} />
+        <PhaseBar phase={gs?.phase} bizStep={gs?.bizStep} />
       </div>
 
       {err ? <div className="toast" onClick={()=>setErr("")}>{err}</div> : null}
@@ -408,13 +444,6 @@ export default function GamePage(){
             <div style={{fontSize:28, fontWeight:900}}>Konec hry</div>
             <div className="muted">Díky za testování.</div>
           </div>
-        ) : gs.phase==="BIZ" && gs.bizStep==="TRENDS" ? (
-          <TrendsPreviewCard
-            gs={gs}
-            onOpen={()=>setTab("trends")}
-            onOpenTrend={(t)=>setTrendModal(t)}
-            onOpenRegional={(t)=>setRegionalModal(t)}
-          />
         ) : gs.phase==="BIZ" && gs.bizStep==="ML_BID" ? (
           <div className="card phaseCard">
             <div className="phaseHeader">
@@ -447,7 +476,7 @@ export default function GamePage(){
               <div className="phaseLeft">
                 <div className="phaseIcon">📍</div>
                 <div>
-                  <div className="phaseTitle">Investice (pohyb)</div>
+                  <div className="phaseTitle">Výběr trhu</div>
                   <div className="phaseSub">Vyber trh. Jakmile klikneš, trh zmizí ostatním. Volba je definitivní.</div>
                 </div>
               </div>
@@ -602,29 +631,25 @@ export default function GamePage(){
               <div className="phaseLeft">
                 <div className="phaseIcon">📷</div>
                 <div>
-                  <div className="phaseTitle">Získej svou investici</div>
-                  <div className="phaseSub">Naskenuj QR na kartě a potvrď, že je tvoje. Můžeš skenovat více karet.</div>
+                  <div className="phaseTitle">Akvizice</div>
+                  <div className="phaseSub">Definitivně potvrď, zda jsi získal kartu. Pokud ano, naskenuj QR kód (můžeš vícekrát).</div>
                 </div>
               </div>
-              <button className={"primaryBtn"} onClick={()=>{ setScanErr(""); setScanOn(v=>!v); }}>
-                {scanOn ? "Vypnout skener" : "Zapnout skener"}
+            </div>
+
+            <div className="ctaRow" style={{marginTop:10}}>
+              <button className="primaryBtn big full" onClick={()=>{ setScanErr(""); setScanOn(true); }}>
+                Získal jsem kartu
+              </button>
+              <button className="secondaryBtn big full" onClick={()=>{ commitAcquire({ gotCard:false }); }}>
+                Nezískal jsem kartu
               </button>
             </div>
 
-            {scanOn ? (
-              <>
-                {scanErr ? <div className="notice">{scanErr}</div> : null}
-                <div className="scanFrame">
-                  <video ref={videoRef} className="scanVideo" />
-                  <div className="scanHint">Zaměř QR kód</div>
-                </div>
-                <div className="muted" style={{marginTop:10}}>Tip: přibliž/oddal telefon, ať je QR ostrý.</div>
-              </>
+            {acqHadAny ? (
+              <div className="muted" style={{marginTop:10}}>✅ Alespoň jedna karta byla naskenována. Dokonči akvizice odpovědí „NE“ v dotazu „Máš toho víc?“.</div>
             ) : (
-              <div className="scanIdle">
-                <div className="scanIdleIcon">📷</div>
-                <div className="scanIdleText">Skener je vypnutý. Zapni ho a naskenuj své karty.</div>
-              </div>
+              <div className="muted" style={{marginTop:10}}>Pokud jsi získal kartu, klikni na „Získal jsem kartu“ a naskenuj QR kód.</div>
             )}
           </div>
         ) : gs.phase==="CRYPTO" ? (
@@ -633,7 +658,7 @@ export default function GamePage(){
               <div className="phaseLeft">
                 <div className="phaseIcon">₿</div>
                 <div>
-                  <div className="phaseTitle">Kryptofáze</div>
+                  <div className="phaseTitle">Kryptoburza</div>
                   <div className="phaseSub">Naklikej změny v kusech. Pak potvrď. Ukazovací režim skryje detaily.</div>
                 </div>
               </div>
@@ -786,6 +811,30 @@ export default function GamePage(){
               <button className="secondaryBtn big full" onClick={()=>{ gmBack(); setGmPanelOpen(false); }}>← Zpět</button>
               <button className="primaryBtn big full" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Další krok →</button>
             </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {/* Acquisition: scanner (small QR-friendly) */}
+      {scanOn && gs?.phase==="BIZ" && gs?.bizStep==="ACQUIRE" ? (
+        <SuperTopModal title="Skener QR" onClose={()=>{ setScanOn(false); setScanErr(""); }}>
+          {scanErr ? <div className="notice">{scanErr}</div> : null}
+          <div className="scanFrame">
+            <video ref={videoRef} className="scanVideo" playsInline />
+            <div className="scanHint">Zaměř malý QR kód</div>
+          </div>
+          <div className="muted" style={{marginTop:10}}>Tip: přibliž telefon k QR a drž ho chvíli v klidu (ostření).</div>
+          <button className="ghostBtn full" style={{marginTop:12}} onClick={()=>{ setScanOn(false); setScanErr(""); }}>Zavřít skener</button>
+        </SuperTopModal>
+      ) : null}
+
+      {/* Acquisition: "Máš toho víc" loop */}
+      {acqMoreOpen && gs?.phase==="BIZ" && gs?.bizStep==="ACQUIRE" ? (
+        <Modal title="Máš toho víc?" onClose={()=>setAcqMoreOpen(false)}>
+          <div className="muted">Pokud máš další kartu, dej ANO a pokračuj ve skenování. Pokud už ne, dej NE – to je definitivní rozhodnutí.</div>
+          <div className="ctaRow" style={{marginTop:12}}>
+            <button className="secondaryBtn big full" onClick={()=>{ setAcqMoreOpen(false); setScanErr(""); setScanOn(true); }}>ANO</button>
+            <button className="primaryBtn big full" onClick={()=>{ setAcqMoreOpen(false); commitAcquire({ gotCard:true }); }}>NE</button>
           </div>
         </Modal>
       ) : null}
@@ -988,6 +1037,21 @@ export default function GamePage(){
         </Modal>
       ) : null}
 
+      {mlTrendIntroOpen && gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" ? (
+        <Modal
+          title={`Aktuální trend pro Rok ${gs?.year||1}`}
+          onClose={()=>setMlTrendIntroOpen(false)}
+          variant="top"
+        >
+          <CurrentTrendsMini
+            gs={gs}
+            onOpenAll={()=>setTab("trends")}
+            onOpenTrend={(t)=>setTrendModal(t)}
+            onOpenRegional={(t)=>setRegionalModal(t)}
+          />
+        </Modal>
+      ) : null}
+
       {trendModal ? (
         <SuperTopModal title={`${trendModal.icon||"🌐"} ${trendModal.name||"Trend"}`} onClose={()=>setTrendModal(null)}>
           <div className="modalText">
@@ -1004,7 +1068,7 @@ export default function GamePage(){
 
             const canNow =
               allowed && (
-                (req==="BIZ_TRENDS_ONLY" && phase==="BIZ" && biz==="TRENDS") ||
+                (req==="BIZ_TRENDS_ONLY" && phase==="BIZ" && biz==="ML_BID") ||
                 (req==="BIZ_MOVE_ONLY" && phase==="BIZ" && biz==="MOVE") ||
                 (req==="AUDIT_ANYTIME_BEFORE_CLOSE" && phase==="SETTLE")
               );
@@ -1020,7 +1084,7 @@ export default function GamePage(){
             }
 
             const phaseHint =
-              req==="BIZ_TRENDS_ONLY" ? "Právníka lze použít pouze ve fázi Trendy." :
+              req==="BIZ_TRENDS_ONLY" ? "Právníka lze použít na začátku roku ve fázi Market Leader." :
               req==="BIZ_MOVE_ONLY" ? "Právníka lze použít pouze ve fázi Investice (pohyb)." :
               req==="AUDIT_ANYTIME_BEFORE_CLOSE" ? "Právníka lze použít kdykoliv před uzavřením Auditu." :
               "Právníka nelze použít.";
@@ -1197,6 +1261,81 @@ function TrendsPreviewCard({ gs, onOpen, onOpenTrend, onOpenRegional }){
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CurrentTrendsMini({ gs, onOpenAll, onOpenTrend, onOpenRegional }){
+  const y = gs?.year || 1;
+  const data = gs?.trends?.byYear?.[String(y)];
+  const globals = data?.globals || [];
+  const crypto = data?.crypto || null;
+  const regional = data?.regional || {};
+
+  const regCls = (t)=>{
+    const k = String(t?.key||"");
+    const n = String(t?.name||"").toLowerCase();
+    if(k.includes("REG_INVESTMENT_BOOM") || n.includes("boom")) return "reg boom";
+    if(k.includes("REG_HIGH_EDUCATION") || n.includes("vzdělan") || n.includes("vzdelan")) return "reg edu";
+    if(k.includes("REG_STABILITY") || n.includes("stabil")) return "reg stable";
+    if(k.includes("REG_TAXES") || n.includes("dan")) return "reg tax";
+    return "reg";
+  };
+
+  return (
+    <div>
+      <div className="muted" style={{marginTop:-6}}>Aktivní trendy pro tento rok (detail kdykoliv v záložce Trendy).</div>
+
+      <div style={{marginTop:12}}>
+        <div className="secTitle">Globální</div>
+        <div className="previewRow" style={{marginTop:10}}>
+          {globals.length ? globals.map(t=>(
+            <div key={t.trendId||t.key} className="previewCard clickable" onClick={()=>onOpenTrend && onOpenTrend(t)} role="button" tabIndex={0}>
+              <div className="previewIcon">{t.icon||"🌐"}</div>
+              <div className="previewName">{t.name}</div>
+            </div>
+          )) : <div className="muted">—</div>}
+        </div>
+      </div>
+
+      <div style={{marginTop:14}}>
+        <div className="secTitle">Krypto</div>
+        <div className="cardInner" style={{marginTop:10}}>
+          {crypto?.coeff ? (
+            <div className="cryptoMini">
+              {["BTC","ETH","LTC","SIA"].map(sym=>{
+                const k = Number(crypto.coeff?.[sym] ?? 1);
+                const a = arrowForCoeff(k);
+                return (
+                  <div key={sym} className="cryptoMiniRow">
+                    <div className="pill" style={{minWidth:56,justifyContent:"center"}}>{sym}</div>
+                    <div className={"trendArrow "+a.cls} aria-label={a.label}>{a.sym}</div>
+                    <div className="muted">×{k}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="muted">—</div>
+          )}
+        </div>
+      </div>
+
+      <div style={{marginTop:14}}>
+        <div className="secTitle">Regionální</div>
+        <div className="regionalMini" style={{marginTop:8}}>
+          {Object.values(regional).map(t=>(
+            <div key={t.trendId||t.key} className="regionalDot">
+              <span>{t.continent}</span>
+              <button className={"regSymBtn "+regCls(t)} onClick={()=>onOpenRegional && onOpenRegional(t)} aria-label="Detail regionálního trendu">
+                <span className="regSymIcon">{t.icon || "📍"}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button className="ghostBtn full" style={{marginTop:14}} onClick={onOpenAll}>Všechny trendy</button>
     </div>
   );
 }

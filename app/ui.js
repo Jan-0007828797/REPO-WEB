@@ -21,7 +21,7 @@ export function BottomBar({onTab, active}){
     <div className="bottomBar">
       <button className={"tabBtn"+(active==="accounting"?" active":"")} onClick={()=>onTab("accounting")} aria-label="Účetnictví / Finance">
         <span className="tabIcon tabChar" aria-hidden="true">$</span>
-        <span className="tabLabel">Finance</span>
+        <span className="tabLabel">Peněženka</span>
       </button>
 
       <button className={"tabBtn"+(active==="assets"?" active":"")} onClick={()=>onTab("assets")} aria-label="Karty">
