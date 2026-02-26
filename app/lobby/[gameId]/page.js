@@ -20,7 +20,8 @@ export default function Lobby(){
     const onStarted=()=>r.push(`/game/${gameId}`);
     s.on("lobby_update", onUpd);
         s.on("game_started", onStarted);
-        return ()=>{ clearInterval(t); s.off("lobby_update", onUpd); s.off("game_started", onStarted); };
+        // No polling interval is used here; cleanup only event listeners.
+        return ()=>{ s.off("lobby_update", onUpd); s.off("game_started", onStarted); };
   },[gameId,r]);
   function start(){ const s=getSocket(); s.emit("start_game",{gameId},()=>{}); }
   const canStart = isGM && cfg && players.length>=1;
