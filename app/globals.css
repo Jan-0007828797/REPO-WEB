@@ -432,7 +432,7 @@ button{ font-family:inherit; }
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 35;
+  z-index: 2000;
   display:flex;
   justify-content: space-around;
   gap: 6px;
@@ -591,21 +591,6 @@ button{ font-family:inherit; }
 .formRow.stackConfirm .inputBig{
   flex: 1 1 100%;
 }
-.mlAmountInput{
-  font-size: 110px; /* ~5× běžný text; požadavek: číslice x5 */
-  font-weight: 950;
-  line-height: 1.05;
-  text-align: center;
-  padding: 18px 14px;
-  letter-spacing: 1px;
-}
-@media (max-width: 430px){
-  .mlAmountInput{ font-size: 90px; }
-}
-@media (max-width: 360px){
-  .mlAmountInput{ font-size: 76px; }
-}
-
 .formRow.stackConfirm .primaryBtn{flex:1 1 100%;width:100%;}
 
 .inputBig{
@@ -911,17 +896,11 @@ button{ font-family:inherit; }
 .cryptoCard .cryptoRow .coin{ font-weight:800; letter-spacing:0.5px; }
 .cryptoCard .cryptoRow .coef{ font-variant-numeric: tabular-nums; opacity:0.9; }
 
-.cryptoCard .cryptoRow.up .arrow{ font-weight: 950; }
-.cryptoMini.up .arrow{ color: rgba(46, 204, 113, 1); }
-.cryptoMini.down .arrow{ color: rgba(231, 76, 60, 1); }
-.cryptoMini.flat .arrow{ color: rgba(52, 152, 219, 1); }
+.cryptoCard .cryptoRow.up .arrow{ color: var(--primary); }
 .cryptoCard .cryptoRow.down .arrow{ color: var(--danger); }
 .cryptoCard .cryptoRow.flat .arrow{ color: var(--accent); }
 
-.cryptoPreview .cryptoMini.up .arrow{ font-weight: 950; }
-.cryptoMini.up .arrow{ color: rgba(46, 204, 113, 1); }
-.cryptoMini.down .arrow{ color: rgba(231, 76, 60, 1); }
-.cryptoMini.flat .arrow{ color: rgba(52, 152, 219, 1); }
+.cryptoPreview .cryptoMini.up .arrow{ color: var(--primary); }
 .cryptoPreview .cryptoMini.down .arrow{ color: var(--danger); }
 .cryptoPreview .cryptoMini.flat .arrow{ color: var(--accent); }
 
@@ -1079,57 +1058,4 @@ button{ font-family:inherit; }
 .modalBackdrop{ z-index: 600; }
 
 
-/* === UX additions: ML intro trends + GM quick CTA + locked blocks === */
-.introBackdrop{
-  position:fixed;
-  inset:0;
-  background: rgba(0,0,0,.72);
-  z-index: 2000;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding: 16px;
-}
-.introModal{
-  width: min(720px, 100%);
-  max-height: min(86vh, 820px);
-  overflow:auto;
-  background: rgba(18,18,22,.98);
-  border: 1px solid rgba(255,255,255,.10);
-  border-radius: 18px;
-  box-shadow: 0 24px 80px rgba(0,0,0,.55);
-  padding: 14px;
-}
-.introHeader{ padding: 10px 10px 6px 10px; }
-.introTitle{ font-weight: 900; font-size: 20px; }
-.introSub{ margin-top: 4px; opacity: .78; font-size: 13px; }
-.introBody{ padding: 8px 6px 0 6px; }
-.introFooter{ padding: 10px 10px 6px 10px; }
-
-.lockedBlock{
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.10);
-  border-radius: 16px;
-  padding: 14px;
-}
-.lockedTitle{ font-weight: 900; font-size: 16px; }
-.lockedSub{ opacity: .78; font-size: 13px; margin-top: 2px; }
-.lockedValue{ font-weight: 900; font-size: 22px; margin-top: 10px; }
-
-.gmQuickCta{
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 92px; /* above bottom bar */
-  z-index: 1800;
-  background: rgba(18,18,22,.92);
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 16px;
-  padding: 12px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 10px;
-  box-shadow: 0 18px 50px rgba(0,0,0,.45);
-}
-.gmQuickText{ font-weight: 800; }
+.pagePad{ padding-bottom: 96px; }

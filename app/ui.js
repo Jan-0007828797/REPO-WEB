@@ -19,12 +19,12 @@ export function Modal({title,onClose,children,variant}){
 export function BottomBar({onTab, active}){
   return (
     <div className="bottomBar">
-      <button className={"tabBtn"+(active==="accounting"?" active":"")} onClick={()=>onTab("accounting")} aria-label="Účetnictví / Finance">
+      <button className={"tabBtn"+(active==="wallet"?" active":"")} onClick={()=>onTab("wallet")} aria-label="Peněženka">
         <span className="tabIcon tabChar" aria-hidden="true">$</span>
-        <span className="tabLabel">Finance</span>
+        <span className="tabLabel">Peněženka</span>
       </button>
 
-      <button className={"tabBtn"+(active==="assets"?" active":"")} onClick={()=>onTab("assets")} aria-label="Karty">
+      <button className={"tabBtn"+(active==="cards"?" active":"")} onClick={()=>onTab("cards")} aria-label="Karty">
         <span className="tabIcon" aria-hidden="true">
           <svg className="tabSvg" viewBox="0 0 64 64" role="img" aria-label="Karta s QR kódem">
             <rect x="10" y="12" width="44" height="40" rx="8" ry="8" fill="none" stroke="currentColor" strokeWidth="4" />
