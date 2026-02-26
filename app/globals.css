@@ -243,15 +243,6 @@ button{ font-family:inherit; }
 }
 
 .gmFab{
-
-	/* GM button must stay visible and clickable above any overlay */
-	position: fixed;
-	top: calc(12px + env(safe-area-inset-top));
-	right: 12px;
-	z-index: 30001;
-	pointer-events: auto;
-	user-select: none;
-
   border-radius: 999px;
   padding: 8px 12px;
   border: 1px solid rgba(255,255,255,.18);
@@ -262,18 +253,6 @@ button{ font-family:inherit; }
   cursor:pointer;
 }
 .gmFab:active{ transform: translateY(1px); }
-
-/* Phase readiness signal: red at phase start -> green once all players made an irreversible decision */
-.gmFab.pending{
-	background: rgba(239, 68, 68, .18);
-	border-color: rgba(239, 68, 68, .45);
-	box-shadow: 0 0 0 4px rgba(239, 68, 68, .10), 0 0 24px rgba(239, 68, 68, .22);
-}
-.gmFab.ready{
-	background: rgba(34, 197, 94, .18);
-	border-color: rgba(34, 197, 94, .45);
-	box-shadow: 0 0 0 4px rgba(34, 197, 94, .10), 0 0 24px rgba(34, 197, 94, .22);
-}
 
 .yearPill{
   flex: 0 0 auto;
@@ -1091,5 +1070,4 @@ button{ font-family:inherit; }
 /* Modal stacking helper: always on top */
 .modalBackdrop.top{ z-index: 260; }
 .modalBackdrop.superTop{ z-index: 9999 !important; }
-.modalBackdrop.gmPriority{ z-index: 20000 !important; }
 .modalBackdrop{ z-index: 600; }
