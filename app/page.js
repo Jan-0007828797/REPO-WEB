@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { loadLastGameId, loadName, loadPlayerId, saveName } from "../lib/storage";
 import { useRouter } from "next/navigation";
+import { getSocket } from "../lib/socket";
 
 export default function Home(){
   const [name,setName]=useState("");
@@ -16,6 +17,27 @@ export default function Home(){
   },[]);
 
   const canResume = Boolean(lastGame && playerId);
+
+  function resumeLast(){
+    if(!lastGame || !playerId) return;
+    try{
+      const s = getSocket();
+      s.emit("reconnect_game", { gameId: lastGame, playerId }, (res)=>{
+        if(!res?.ok){
+          r.push(`/lobby/${lastGame}`);
+          return;
+        }
+        const status = res.gameStatus || res.status;
+        if(status === "IN_PROGRESS"){
+          r.push(`/game/${lastGame}`);
+        }else{
+          r.push(`/lobby/${lastGame}?role=${res.role==="GM"?"gm":"player"}`);
+        }
+      });
+    }catch{
+      r.push(`/lobby/${lastGame}`);
+    }
+  }
 
   return (
     <div className="container">
@@ -32,7 +54,7 @@ export default function Home(){
 
         {canResume ? (
           <div style={{marginTop:10}}>
-            <button className="btn secondary" disabled={!name.trim()} onClick={()=>r.push(`/lobby/${lastGame}`)}>
+            <button className="btn secondary" disabled={!name.trim()} onClick={resumeLast}>
               ↩ Vrátit se do poslední hry
             </button>
             <div className="hint" style={{marginTop:6}}>Tip: pokud se vracíš na jiném zařízení, naskenuj znovu QR kód hry.</div>

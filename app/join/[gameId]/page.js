@@ -25,7 +25,12 @@ export default function JoinConfirm(){
       if(res?.ok){
         savePlayerId(res.playerId);
         saveLastGameId(gameId);
-        r.push(`/lobby/${gameId}?role=${res.role==="GM"?"gm":"player"}`);
+        const status = res.gameStatus || res.status;
+        if(status === "IN_PROGRESS"){
+          r.push(`/game/${gameId}`);
+        }else{
+          r.push(`/lobby/${gameId}?role=${res.role==="GM"?"gm":"player"}`);
+        }
       }
       // pokud reconnect selže, nech hráče připojit se znovu
     });

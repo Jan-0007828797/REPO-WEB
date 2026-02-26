@@ -32,7 +32,15 @@ export default function Lobby(){
 
     const onUpd=(p)=>{ if(p?.gameId!==gameId) return; setPlayers(p.players||[]); setCfg(p.config||null); };
     const onStarted=()=>r.push(`/game/${gameId}`);
-    const onState=(gs)=>{ if(gs?.gameId!==gameId) return; if(gs?.players) setPlayers(gs.players); if(gs?.config) setCfg(gs.config); };
+    const onState=(gs)=>{
+      if(gs?.gameId!==gameId) return;
+      if(gs?.status==="IN_PROGRESS"){
+        r.push(`/game/${gameId}`);
+        return;
+      }
+      if(gs?.players) setPlayers(gs.players);
+      if(gs?.config) setCfg(gs.config);
+    };
 
     s.on("lobby_update", onUpd);
     s.on("game_state", onState);
