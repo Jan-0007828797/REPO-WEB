@@ -166,7 +166,7 @@ export default function GamePage(){
 
   useEffect(()=>{
 
-    s.emit("watch_game", { gameId }, (res)=>{
+    s.emit("watch_game", { gameId, playerId }, (res)=>{
       if(!res?.ok) setErr(res?.error || "Nelze načíst hru.");
     });
     const onState = (state)=>{
