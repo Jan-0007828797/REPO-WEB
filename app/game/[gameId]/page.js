@@ -6,13 +6,30 @@ import { BrowserMultiFormatReader } from "@zxing/browser";
 import { getSocket } from "../../../lib/socket";
 import { loadPlayerId } from "../../../lib/storage";
 import { playClock, stopClock, playRing, stopRing } from "../../../lib/audio";
-import { BottomBar, Modal } from "../../ui";
+import { BottomBar, BottomBarWrapper, Modal } from "../../ui";
 
 function SuperTopModal({ title, onClose, children }){
   // Same behavior/markup as Modal, but guaranteed above other modals.
   useEffect(()=>{ const onKey=(e)=>{ if(e.key==="Escape") onClose?.(); }; window.addEventListener("keydown", onKey); return ()=>window.removeEventListener("keydown", onKey); },[onClose]);
   return (
     <div className="modalBackdrop top superTop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
+      <div className="modal">
+        <div className="modalHeader">
+          <div style={{fontWeight:900,fontSize:18}}>{title}</div>
+          <button className="iconBtn" onClick={onClose}>✕</button>
+        </div>
+        <div style={{height:1,background:"rgba(255,255,255,.10)",margin:"12px 0"}}></div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function GMTopModal({ title, onClose, children }){
+  // Absolute priority above everything; blocks the game from getting stuck.
+  useEffect(()=>{ const onKey=(e)=>{ if(e.key==="Escape") onClose?.(); }; window.addEventListener("keydown", onKey); return ()=>window.removeEventListener("keydown", onKey); },[onClose]);
+  return (
+    <div className="modalBackdrop gmTop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
       <div className="modal">
         <div className="modalHeader">
           <div style={{fontWeight:900,fontSize:18}}>{title}</div>
@@ -67,16 +84,15 @@ function PhaseBar({ phase, bizStep }){
   );
 }
 
-function PrivacyCard({ kind, mode, amountText, onReveal, onHide, onClose }){
+function PrivacyCard({ kind, mode, amountText, onReveal, onHide }){
   const b = badgeFor(kind);
   if(mode==="edit") return null;
   return (
-    <div className="privacyBackdrop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
+    <div className="privacyBackdrop">
       <div className="privacyFull">
         <div className="privacyBadge">
           <span className="privacyEmoji">{b.emoji}</span>
           <span className="privacyLabel">{b.label}</span>
-          <button className="privacyClose" onClick={onClose} aria-label="Zavřít">✕</button>
         </div>
 
         {mode==="hidden" ? (
@@ -121,11 +137,7 @@ export default function GamePage(){
   const [cryptoPrivacy, setCryptoPrivacy] = useState("edit");
   const [settlePrivacy, setSettlePrivacy] = useState("edit");
 
-  // overlay visibility (so GM controls stay usable and players can dismiss overlays)
-  const [mlOverlayOpen, setMlOverlayOpen] = useState(true);
-  const [aucOverlayOpen, setAucOverlayOpen] = useState(true);
-  const [cryptoOverlayOpen, setCryptoOverlayOpen] = useState(true);
-  const [settleOverlayOpen, setSettleOverlayOpen] = useState(true);
+  // Privacy overlays are hard-lock (cannot be dismissed; disappear on phase change)
 
   // inputs
   const [mlBid, setMlBid] = useState("");
@@ -167,6 +179,9 @@ export default function GamePage(){
 
   const me = gs?.players?.find(p=>p.playerId===playerId) || null;
   const isGM = me?.role==="GM";
+
+  const uiLocked = (gs?.phase==="BIZ" && gs?.bizStep==="MOVE" && !!gs?.biz?.move?.[playerId]?.committed);
+  const setTabSafe = (t)=>{ if(!uiLocked) setTab(t); };
 
   // Sound logic: clock during interactive steps (except Trends)
   useEffect(()=>{
@@ -214,23 +229,19 @@ export default function GamePage(){
     if(phase==="BIZ" && step==="ML_BID"){
       const committed = !!gs?.biz?.mlBids?.[playerId]?.committed;
       setMlPrivacy(committed ? "hidden" : "edit");
-      setMlOverlayOpen(true);
       setMlTrendIntroOpen(true);
     }
     if(phase==="BIZ" && step==="AUCTION_ENVELOPE"){
       const committed = !!gs?.biz?.auction?.entries?.[playerId]?.committed;
       setAucPrivacy(committed ? "hidden" : "edit");
-      setAucOverlayOpen(true);
     }
     if(phase==="CRYPTO"){
       const committed = !!gs?.crypto?.entries?.[playerId]?.committed;
       setCryptoPrivacy(committed ? "hidden" : "edit");
-      setCryptoOverlayOpen(true);
     }
     if(phase==="SETTLE"){
       const committed = !!gs?.settle?.entries?.[playerId]?.committed;
       setSettlePrivacy(committed ? "hidden" : "edit");
-      setSettleOverlayOpen(true);
     }
 
     // Acquisition step: default scanner OFF, clear preview
@@ -313,11 +324,49 @@ export default function GamePage(){
   function gmNext(){ s.emit("gm_next", { gameId, playerId }, (res)=>{ if(!res?.ok) setErr(res?.error||""); }); }
   function gmBack(){ s.emit("gm_back", { gameId, playerId }, (res)=>{ if(!res?.ok) setErr(res?.error||""); }); }
 
+  // Readiness signal for GM button (GM is also counted as a player)
+  const readiness = useMemo(()=>{
+    const players = gs?.players || [];
+    if(!players.length) return { ready:0, total:0, isGreen:false };
+
+    const pidList = players.map(p=>p.playerId);
+
+    const phase = gs?.phase;
+    const step = gs?.bizStep;
+
+    function committedFor(pid){
+      if(phase==="BIZ" && step==="ML_BID") return !!gs?.biz?.mlBids?.[pid]?.committed;
+      if(phase==="BIZ" && step==="MOVE") return !!gs?.biz?.move?.[pid]?.committed;
+      if(phase==="BIZ" && step==="AUCTION_ENVELOPE"){
+        const e = gs?.biz?.auction?.entries?.[pid];
+        if(!gs?.biz?.auction?.lobbyistPhaseActive) return !!e?.committed;
+        // lobbyist final wave: only lobbyists are required
+        if(!e?.usedLobbyist) return true;
+        return !!e?.finalCommitted;
+      }
+      if(phase==="BIZ" && step==="ACQUIRE") return !!gs?.biz?.acquire?.entries?.[pid]?.committed;
+      if(phase==="CRYPTO") return !!gs?.crypto?.entries?.[pid]?.committed;
+      if(phase==="SETTLE") return !!gs?.settle?.entries?.[pid]?.committed;
+      return false;
+    }
+
+    // Total count in lobbyist subphase = only lobbyists (everyone else is auto-ready)
+    let totalIds = pidList;
+    if(phase==="BIZ" && step==="AUCTION_ENVELOPE" && gs?.biz?.auction?.lobbyistPhaseActive){
+      const entries = gs?.biz?.auction?.entries || {};
+      totalIds = pidList.filter(pid=>!!entries[pid]?.usedLobbyist);
+      if(totalIds.length===0) totalIds = pidList; // safety
+    }
+
+    const ready = totalIds.filter(pid=>committedFor(pid)).length;
+    const total = totalIds.length;
+    return { ready, total, isGreen: total>0 && ready===total };
+  }, [gs, playerId]);
+
   function commitML(amount){
     s.emit("commit_ml_bid", { gameId, playerId, amountUsd: amount }, (res)=>{
       if(!res?.ok) return setErr(res?.error||"Chyba");
       setMlPrivacy("hidden"); // auto hide after commit
-      setMlOverlayOpen(true);
     });
   }
 
@@ -325,13 +374,6 @@ export default function GamePage(){
     s.emit("commit_auction_bid", { gameId, playerId, bidUsd: bid, usedLobbyist }, (res)=>{
       if(!res?.ok) return setErr(res?.error||"Chyba");
       setAucPrivacy("hidden"); // auto hide after commit
-      setAucOverlayOpen(true);
-    });
-  }
-
-  function openLobbyWindow(){
-    s.emit("gm_open_lobbyist_window", { gameId, playerId }, (res)=>{
-      if(!res?.ok) setErr(res?.error||"");
     });
   }
 
@@ -339,7 +381,6 @@ export default function GamePage(){
     s.emit("commit_auction_final_bid", { gameId, playerId, finalBidUsd: finalBid }, (res)=>{
       if(!res?.ok) return setErr(res?.error||"Chyba");
       setAucPrivacy("hidden");
-      setAucOverlayOpen(true);
     });
   }
 
@@ -353,7 +394,6 @@ export default function GamePage(){
     s.emit("commit_crypto", { gameId, playerId, deltas: cryptoD }, (res)=>{
       if(!res?.ok) return setErr(res?.error||"Chyba");
       setCryptoPrivacy("hidden");
-      setCryptoOverlayOpen(true);
     });
   }
 
@@ -361,7 +401,6 @@ export default function GamePage(){
     s.emit("commit_settlement_ready", { gameId, playerId }, (res)=>{
       if(!res?.ok) return setErr(res?.error||"Chyba");
       setSettlePrivacy("hidden");
-      setSettleOverlayOpen(true);
     });
   }
 
@@ -424,15 +463,28 @@ export default function GamePage(){
           </div>
           <div className="topHeaderRight">
             {gs?.year ? <div className="yearPill">Rok {gs.year}</div> : null}
-            {isGM ? (
-              <button className="gmFab" onClick={()=>setGmPanelOpen(true)} aria-label="GM panel">
-                GM
-              </button>
-            ) : null}
           </div>
         </div>
         <PhaseBar phase={gs?.phase} bizStep={gs?.bizStep} />
       </div>
+
+      {isGM && gs?.status==="IN_PROGRESS" ? (
+        <div className="gmFabFixed">
+          <button
+            className={"gmFab "+(readiness.isGreen?"gmGreen":"gmRed")}
+            onClick={()=>{
+              if(readiness.isGreen){
+                gmNext();
+              }else{
+                setGmPanelOpen(true);
+              }
+            }}
+            aria-label="GM – další fáze"
+          >
+            GM <span className="gmCount">{readiness.ready}/{readiness.total}</span>
+          </button>
+        </div>
+      ) : null}
 
       {err ? <div className="toast" onClick={()=>setErr("")}>{err}</div> : null}
 
@@ -591,20 +643,27 @@ export default function GamePage(){
                   <div className="phaseSub">Zadej nabídku v USD, nebo zvol neúčast. Pokud máš lobbistu, můžeš získat „poslední šanci“.</div>
                 </div>
               </div>
-              {isGM ? <button className="ghostBtn" onClick={openLobbyWindow}>Lobbista</button> : null}
             </div>
 
             {!aucEntry?.committed ? (
               <>
                 {/* golden rule: keep button styling (classes) identical; only change layout */}
                 <div className="formRow stackConfirm">
-                  <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucBid} onChange={(e)=>setAucBid(e.target.value.replace(/[^\d]/g,""))} />
-                  <button className="primaryBtn big full" onClick={()=>commitAuction(aucBid===""?0:Number(aucBid), useLobby)}>Potvrdit</button>
+                  <input
+                    className="inputBig"
+                    inputMode="numeric"
+                    placeholder={useLobby ? "Lobbista" : "0"}
+                    maxLength={8}
+                    value={useLobby ? "" : aucBid}
+                    disabled={useLobby}
+                    onChange={(e)=>setAucBid(e.target.value.replace(/[^\d]/g,""))}
+                  />
+                  <button className="primaryBtn big full" onClick={()=>commitAuction(useLobby ? null : (aucBid===""?0:Number(aucBid)), useLobby)}>Potvrdit</button>
                 </div>
                 <div className="formRow">
                   <label className="checkRow">
                     <input type="checkbox" checked={useLobby} onChange={(e)=>setUseLobby(e.target.checked)} />
-                    <span>Použít lobbistu (pokud ho mám)</span>
+                    <span>Použít lobbistu (částku zadám až po odhalení nabídek)</span>
                   </label>
                 </div>
                 <button className="secondaryBtn big full" onClick={()=>commitAuction(null, false)}>Nechci dražit</button>
@@ -613,11 +672,26 @@ export default function GamePage(){
               <>
                 {gs.biz.auction.lobbyistPhaseActive && aucEntry?.usedLobbyist && !aucEntry?.finalCommitted ? (
                   <div className="cardInner">
-                    <div className="muted"><b>Poslední šance</b> – vidíš nabídky ostatních (mimo aplikaci si je ukážete). Zadej finální nabídku.</div>
-                    <div className="formRow">
-                      <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucFinalBid} onChange={(e)=>setAucFinalBid(e.target.value.replace(/[^\d]/g,""))} />
-                      <button className="primaryBtn big" onClick={()=>commitFinalAuction(aucFinalBid===""?0:Number(aucFinalBid))}>Odeslat</button>
+                    <div className="muted"><b>Lobbista</b> – vidíš výsledky 1. kola. Nyní zvol finální rozhodnutí.</div>
+
+                    <div className="auditTable" style={{marginTop:12}}>
+                      {(gs.players||[]).map(p=>{
+                        const e = gs.biz.auction.entries?.[p.playerId];
+                        const txt = e?.usedLobbyist ? "Použit Lobbista" : (e?.bidUsd==null ? "Nechci dražit" : `${e.bidUsd} USD`);
+                        return (
+                          <div key={p.playerId} className="auditRow">
+                            <div className="auditLbl">{p.name}</div>
+                            <div className="auditVal neu">{txt}</div>
+                          </div>
+                        );
+                      })}
                     </div>
+
+                    <div className="formRow" style={{marginTop:12}}>
+                      <input className="inputBig" inputMode="numeric" placeholder="0" maxLength={8} value={aucFinalBid} onChange={(e)=>setAucFinalBid(e.target.value.replace(/[^\d]/g,""))} />
+                      <button className="primaryBtn big" onClick={()=>commitFinalAuction(aucFinalBid===""?0:Number(aucFinalBid))}>Potvrdit</button>
+                    </div>
+                    <button className="secondaryBtn big full" onClick={()=>commitFinalAuction(null)} style={{marginTop:10}}>Nechci dražit</button>
                   </div>
                 ) : (
                   <div className="muted">Obálka odeslána. (Telefon je skrytý – můžeš odkryt ručně.)</div>
@@ -785,7 +859,7 @@ export default function GamePage(){
                           {usable.length ? (
                             <button className="secondaryBtn big full" onClick={()=>setExpertsOpen(true)}>Povolat experty</button>
                           ) : null}
-                          <button className="primaryBtn big full" onClick={()=>{ setSettleOverlayOpen(true); setSettlePrivacy("reveal"); }}>Potvrdit audit (ukázat)</button>
+                          <button className="primaryBtn big full" onClick={()=>{ setSettlePrivacy("reveal"); }}>Potvrdit audit (ukázat)</button>
                         </div>
                       )}
                     </>
@@ -801,18 +875,28 @@ export default function GamePage(){
         )}
       </div>
 
-      <BottomBar onTab={setTab} active={tab} />
+      <BottomBarWrapper disabled={uiLocked}>
+        <BottomBar onTab={setTabSafe} active={tab} />
+      </BottomBarWrapper>
 
       {gmPanelOpen && isGM && gs?.status==="IN_PROGRESS" ? (
-        <Modal title="GM panel" onClose={()=>setGmPanelOpen(false)} variant="top">
+        <GMTopModal title="GM potvrzení" onClose={()=>setGmPanelOpen(false)}>
           <div className="gmPanel">
-            <div className="muted" style={{marginBottom:12}}>Ovládání fází (pouze GM). Nemá rušit hráče.</div>
+            <div className="muted" style={{marginBottom:12}}>
+              Tlačítko je červené: ne všichni hráči potvrdili definitivní rozhodnutí.
+              <br/><b>Stav:</b> {readiness.ready}/{readiness.total}
+              {gs?.phase==="BIZ" && gs?.bizStep==="MOVE" ? (
+                <>
+                  <br/><b>Pozor:</b> Ve fázi Výběr trhu by se nemělo pokračovat, dokud nejsou všichni hotovo.
+                </>
+              ) : null}
+            </div>
             <div className="ctaRow">
               <button className="secondaryBtn big full" onClick={()=>{ gmBack(); setGmPanelOpen(false); }}>← Zpět</button>
-              <button className="primaryBtn big full gmNextBtn" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Další krok →</button>
+              <button className="primaryBtn big full gmNextBtn" onClick={()=>{ gmNext(); setGmPanelOpen(false); }}>Přesto pokračovat →</button>
             </div>
           </div>
-        </Modal>
+        </GMTopModal>
       ) : null}
 
       {/* Acquisition: scanner (small QR-friendly) */}
@@ -882,38 +966,56 @@ export default function GamePage(){
 
 
       {/* NOTE: trend/regional detail overlays are rendered at the very end (superTop) so they always stay above other modals. */}
+
+      {/* MOVE: definitive confirmation (cannot be closed; disappears on phase change) */}
+      {uiLocked ? (()=>{
+        const marketId = gs?.biz?.move?.[playerId]?.marketId;
+        const m = (gs?.catalog?.markets||[]).find(x=>x.marketId===marketId) || null;
+        return (
+          <div className="lockBackdrop" aria-label="Definitivní výběr trhu">
+            <div className="lockModal">
+              <div className="lockTitle">Definitivní výběr trhu</div>
+              <div className="lockSub">Ukaž tento displej ostatním hráčům. Okno se zavře až při posunu do další fáze.</div>
+              <div className="lockBig">{m?.name || marketId || "—"}</div>
+              <div className="lockTag">{m?.type ? `Typ: ${m.type}` : ""}</div>
+            </div>
+          </div>
+        );
+      })() : null}
+
       {/* privacy overlays */}
       <PrivacyCard
         kind="ML"
-        mode={(mlOverlayOpen && gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" && gs?.biz?.mlBids?.[playerId]?.committed) ? mlPrivacy : "edit"}
+        mode={(gs?.phase==="BIZ" && gs?.bizStep==="ML_BID" && gs?.biz?.mlBids?.[playerId]?.committed) ? mlPrivacy : "edit"}
         amountText={(mlAmount==null) ? "NECHCI" : `${mlAmount} USD`}
         onReveal={()=>setMlPrivacy("reveal")}
         onHide={()=>setMlPrivacy("hidden")}
-        onClose={()=>setMlOverlayOpen(false)}
       />
       <PrivacyCard
         kind="AUCTION"
-        mode={(aucOverlayOpen && gs?.phase==="BIZ" && gs?.bizStep==="AUCTION_ENVELOPE" && gs?.biz?.auction?.entries?.[playerId]?.committed) ? aucPrivacy : "edit"}
+        mode={(() => {
+          const committed = !!gs?.biz?.auction?.entries?.[playerId]?.committed;
+          const isLobbyistFinal = !!gs?.biz?.auction?.lobbyistPhaseActive && !!gs?.biz?.auction?.entries?.[playerId]?.usedLobbyist && !gs?.biz?.auction?.entries?.[playerId]?.finalCommitted;
+          if(gs?.phase==="BIZ" && gs?.bizStep==="AUCTION_ENVELOPE" && committed && !isLobbyistFinal) return aucPrivacy;
+          return "edit";
+        })()}
         amountText={(aucShownBid==null) ? "NECHCI" : `${aucShownBid} USD`}
         onReveal={()=>setAucPrivacy("reveal")}
         onHide={()=>setAucPrivacy("hidden")}
-        onClose={()=>setAucOverlayOpen(false)}
       />
       <PrivacyCard
         kind="CRYPTO"
-        mode={(cryptoOverlayOpen && gs?.phase==="CRYPTO" && gs?.crypto?.entries?.[playerId]?.committed) ? cryptoPrivacy : "edit"}
+        mode={(gs?.phase==="CRYPTO" && gs?.crypto?.entries?.[playerId]?.committed) ? cryptoPrivacy : "edit"}
         amountText={`${cryptoDelta>0?"+":""}${cryptoDelta||0} USD`}
         onReveal={()=>setCryptoPrivacy("reveal")}
         onHide={()=>setCryptoPrivacy("hidden")}
-        onClose={()=>setCryptoOverlayOpen(false)}
       />
       <PrivacyCard
         kind="SETTLE"
-        mode={(settleOverlayOpen && gs?.phase==="SETTLE" && gs?.settle?.entries?.[playerId]?.committed) ? settlePrivacy : "edit"}
+        mode={(gs?.phase==="SETTLE" && gs?.settle?.entries?.[playerId]?.committed) ? settlePrivacy : "edit"}
         amountText={`${settleAmount>=0?"+":""}${settleAmount??0} USD`}
         onReveal={()=>setSettlePrivacy("reveal")}
         onHide={()=>setSettlePrivacy("hidden")}
-        onClose={()=>setSettleOverlayOpen(false)}
       />
 
       {/* Tabs */}

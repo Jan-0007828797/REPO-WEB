@@ -51,3 +51,11 @@ export function BottomBar({onTab, active}){
     </div>
   );
 }
+
+// Minimal helper: lets screens temporarily disable interaction with the bottom bar
+// (e.g., MOVE definitive confirmation modal). Visual stays the same.
+export function BottomBarWrapper({ disabled, children }){
+  return (
+    <div className={"bottomBarWrap"+(disabled?" disabled":"")}>{children}</div>
+  );
+}
