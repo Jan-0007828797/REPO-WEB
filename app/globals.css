@@ -489,13 +489,25 @@ button{ font-family:inherit; }
 .marketCellMeta{ margin-top: 4px; font-size: 11px; color: rgba(245,247,255,.62); }
 
 /* Traditional investment colors (agri/mining/industry) – used on the board and across the app */
-.marketCell.industry{ border-color: rgba(66,165,245,.38); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(66,165,245,.10) inset; }
-.marketCell.mining{ border-color: rgba(141,110,99,.45); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(141,110,99,.12) inset; }
-.marketCell.agri{ border-color: rgba(76,175,80,.40); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(76,175,80,.10) inset; }
+.marketCell.industry{ 
+  border-color: rgba(59,130,246,.55);
+  background: linear-gradient(180deg, rgba(37,99,235,.95), rgba(29,78,216,.88));
+  box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(255,255,255,.06) inset;
+}
+.marketCell.mining{ 
+  border-color: rgba(245,158,11,.45);
+  background: linear-gradient(180deg, rgba(180,83,9,.93), rgba(120,53,15,.88));
+  box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(255,255,255,.06) inset;
+}
+.marketCell.agri{ 
+  border-color: rgba(34,197,94,.45);
+  background: linear-gradient(180deg, rgba(22,163,74,.92), rgba(21,128,61,.86));
+  box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(255,255,255,.06) inset;
+}
 
-.marketGlyph.industry{ background: linear-gradient(180deg, rgba(66,165,245,.28), rgba(66,165,245,.10)); }
-.marketGlyph.mining{ background: linear-gradient(180deg, rgba(141,110,99,.28), rgba(141,110,99,.10)); }
-.marketGlyph.agri{ background: linear-gradient(180deg, rgba(76,175,80,.26), rgba(76,175,80,.10)); }
+.marketGlyph.industry{ background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08)); }
+.marketGlyph.mining{ background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08)); }
+.marketGlyph.agri{ background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08)); }
 .marketCell.farm{ border-color: rgba(167,139,250,.22); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(167,139,250,.08) inset; }
 
 .marketCell.locked{ opacity: .55; filter: grayscale(.2); }
@@ -1210,4 +1222,21 @@ button{ font-family:inherit; }
   background: rgba(52,211,153,.15);
   border-color: rgba(52,211,153,.35);
   color: rgba(228,255,245,.95);
+}
+
+.marketCellInner.compact{ display:flex; align-items:center; justify-content:center; }
+.marketCellInner.compact .marketGlyph{ flex: 1 1 auto; width: 100%; min-height: 74px; }
+
+.yearBelowTitle{
+  margin-top: 8px;
+  margin-bottom: 10px;
+  align-self: center;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color: rgba(243,246,255,.92);
+  font-weight: 900;
+  letter-spacing: .2px;
 }

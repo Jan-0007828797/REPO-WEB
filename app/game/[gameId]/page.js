@@ -601,10 +601,8 @@ export default function GamePage(){
           <div>
             <div className="brand">KRYPTOPOLY</div>
           </div>
-          <div className="topHeaderRight">
-            {gs?.year ? <div className="yearPill">Rok {gs.year}</div> : null}
-          </div>
         </div>
+        {gs?.year ? <div className="yearBelowTitle">Rok {gs.year}</div> : null}
         <PhaseBar phase={gs?.phase} bizStep={gs?.bizStep} />
       </div>
 
@@ -682,11 +680,11 @@ export default function GamePage(){
                 return t.includes("farm") || n.includes("farma") || id.startsWith("f");
               };
               const kindOf = (m) => {
-                const t = `${m?.type || ""} ${m?.name || ""}`.toLowerCase();
                 if (isFarm(m)) return "farm";
-                if (t.includes("průmys") || t.includes("prumys") || t.includes("industry")) return "industry";
-                if (t.includes("těž") || t.includes("tez") || t.includes("mining") || t.includes("těža") ) return "mining";
-                if (t.includes("země") || t.includes("zeme") || t.includes("agri") || t.includes("agriculture")) return "agri";
+                const t = String(m?.type || "").toUpperCase();
+                if (t === "AGRO" || t === "AGRI" || t === "ZEMEDELSTVI") return "agri";
+                if (t === "MINING" || t === "TEZBA") return "mining";
+                if (t === "INDUSTRY" || t === "PRUMYSL") return "industry";
                 return "other";
               };
 
@@ -742,16 +740,9 @@ export default function GamePage(){
                     onClick={() => pickMarket(m.marketId)}
                     title={m.name || m.marketId}
                   >
-                    <div className="marketCellInner">
+                    <div className="marketCellInner compact">
                       <div className={"marketGlyph " + cls} aria-hidden="true">
-                        <MonoIcon name={markFor(cls)} size={56} />
-                      </div>
-                      <div className="marketInfo">
-                        <div className="marketCellTop">
-                          <span className="marketCellTitle">{m.name || m.marketId}</span>
-                          <span className="marketCellTag">{m.type}</span>
-                        </div>
-                        <div className="marketCellMeta">{m.marketId}</div>
+                        <MonoIcon name={markFor(cls)} size={64} />
                       </div>
                     </div>
                     {mine ? <div className="pill">MOJE</div> : locked ? <div className="pill dim">OBS.</div> : null}
