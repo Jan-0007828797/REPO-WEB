@@ -244,10 +244,11 @@ export default function GamePage(){
   // Audit (SETTLE) UX state
   const [auditPreview, setAuditPreview] = useState(null); // {settlementUsd, breakdown}
   const [auditLoading, setAuditLoading] = useState(false);
-  const [expertsOpen, setExpertsOpen] = useState(false);
-  const [expertPick, setExpertPick] = useState(null); // expert card
-  const [expertTarget, setExpertTarget] = useState(null); // playerId
-  const [expertCard, setExpertCard] = useState(null); // target investment cardId
+  const [auditLobbyOpen, setAuditLobbyOpen] = useState(false);
+  const [auditLobbyTarget, setAuditLobbyTarget] = useState(null);
+  const [auditLobbyType, setAuditLobbyType] = useState("STEAL");
+  const [auditLawyerMode, setAuditLawyerMode] = useState("NONE"); // NONE|BLOCK_TREND|SHIELD_LOBBY
+  const [auditLawyerTrendKey, setAuditLawyerTrendKey] = useState("");
 
   // Acquisition (scan) UI
   const [scanOn, setScanOn] = useState(false);
@@ -307,8 +308,8 @@ export default function GamePage(){
   // Load preview when entering SETTLE and not yet committed
   useEffect(()=>{
     if(gs?.phase!=="SETTLE") return;
-    const committed = !!gs?.settle?.entries?.[playerId]?.committed;
-    if(committed) return;
+    const started = !!gs?.settle?.entries?.[playerId]?.started;
+    if(started) return;
     setAuditLoading(true);
     s.emit("preview_audit", { gameId, playerId }, (res)=>{
       setAuditLoading(false);
@@ -335,8 +336,8 @@ export default function GamePage(){
       setCryptoPrivacy(committed ? "hidden" : "edit");
     }
     if(phase==="SETTLE"){
-      const committed = !!gs?.settle?.entries?.[playerId]?.committed;
-      setSettlePrivacy(committed ? "hidden" : "edit");
+      const started = !!gs?.settle?.entries?.[playerId]?.started;
+      setSettlePrivacy(started ? "hidden" : "edit");
     }
 
     // Acquisition step: default scanner OFF, clear preview
@@ -441,7 +442,7 @@ export default function GamePage(){
       }
       if(phase==="BIZ" && step==="ACQUIRE") return !!gs?.biz?.acquire?.entries?.[pid]?.committed;
       if(phase==="CRYPTO") return !!gs?.crypto?.entries?.[pid]?.committed;
-      if(phase==="SETTLE") return !!gs?.settle?.entries?.[pid]?.committed;
+      if(phase==="SETTLE") return !!gs?.settle?.entries?.[pid]?.started;
       return false;
     }
 
@@ -499,6 +500,31 @@ export default function GamePage(){
     });
   }
 
+  function auditSetLawyer(next){
+    s.emit("audit_set_pending_lawyer", { gameId, playerId, lawyer: next }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+    });
+  }
+
+  function auditAddLobby(action){
+    s.emit("audit_add_pending_lobby", { gameId, playerId, action }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+    });
+  }
+
+  function auditRemoveLobby(index){
+    s.emit("audit_remove_pending_lobby", { gameId, playerId, index }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+    });
+  }
+
+  function auditPay(){
+    s.emit("audit_pay", { gameId, playerId }, (res)=>{
+      if(!res?.ok) return setErr(res?.error||"Chyba");
+      setSettlePrivacy("hidden");
+    });
+  }
+
   function commitAcquire({ gotCard }){
     s.emit("commit_acquire", { gameId, playerId, gotCard: !!gotCard }, (res)=>{
       if(!res?.ok) setErr(res?.error||"Chyba");
@@ -527,7 +553,7 @@ export default function GamePage(){
   const aucEntry = gs?.biz?.auction?.entries?.[playerId] || null;
   const aucShownBid = (aucEntry?.usedLobbyist && aucEntry?.finalCommitted) ? aucEntry?.finalBidUsd : aucEntry?.bidUsd;
   const cryptoDelta = gs?.crypto?.entries?.[playerId]?.deltaUsd;
-  const settleAmount = gs?.settle?.entries?.[playerId]?.settlementUsd;
+  const settleAmount = gs?.settle?.entries?.[playerId]?.finalUsd;
 
   // Golden rule / UX: Remove redundant phase text under the brand.
 
@@ -540,6 +566,23 @@ export default function GamePage(){
   // Tabs content data
   const myInv = gs?.inventory?.[playerId] || { investments:[], miningFarms:[], experts:[] };
   const myReveals = gs?.reveals?.[playerId] || { globalYearsRevealed:[], cryptoYearsRevealed:[] };
+
+  // Sync local Audit controls from server (so refresh/reconnect keeps UI consistent)
+  useEffect(()=>{
+    if(gs?.phase!=="SETTLE") return;
+    const pend = gs?.settle?.pending?.[playerId] || { lawyer:null, lobby:[] };
+    const l = pend.lawyer;
+    if(!l){
+      setAuditLawyerMode("NONE");
+      setAuditLawyerTrendKey("");
+    }else if(l.mode==="BLOCK_TREND"){
+      setAuditLawyerMode("BLOCK_TREND");
+      setAuditLawyerTrendKey(l.trendKey||"");
+    }else if(l.mode==="SHIELD_LOBBY"){
+      setAuditLawyerMode("SHIELD_LOBBY");
+      setAuditLawyerTrendKey("");
+    }
+  }, [gs?.phase, gs?.settle?.pending?.[playerId], playerId]);
 
   if(err){
     // keep minimal
@@ -915,29 +958,42 @@ export default function GamePage(){
                 <div className="phaseIcon" aria-hidden="true"><MonoIcon name="receipt" size={48} /></div>
                 <div>
                   <div className="phaseTitle">{(() => {
-                    const all = gs?.players?.every(p=>gs?.settle?.entries?.[p.playerId]?.committed);
-                    return all ? "Finální audit" : "Audit";
+                    const entry = gs?.settle?.entries?.[playerId];
+                    if(entry?.paid) return "Audit – platba";
+                    if(gs?.settle?.stage==="FINAL") return "Finální audit";
+                    if(entry?.started) return "Audit";
+                    return "Předběžný audit";
                   })()}</div>
-                  <div className="phaseSub">Nejdřív zafixuj audit. Pak můžeš povolat experty. Výsledek lze ukázat na celé obrazovce.</div>
+                  <div className="phaseSub">Účetnictví + simulace auditu. Tajné akce (Právník, Lobbista) nastavíš jen ty. Po zahájení už nejde měnit.</div>
                 </div>
               </div>
               <button className="ghostBtn" onClick={()=>setTab("accounting")}>Účetnictví</button>
             </div>
 
             {(() => {
-              const entry = gs?.settle?.entries?.[playerId];
-              const committed = !!entry?.committed;
-              const allCommitted = gs?.players?.every(p=>gs?.settle?.entries?.[p.playerId]?.committed);
-              const view = committed ? entry : auditPreview;
-              const sum = view?.settlementUsd;
+              const entry = gs?.settle?.entries?.[playerId] || {};
+              const started = !!entry.started;
+              const paid = !!entry.paid;
+              const stage = gs?.settle?.stage || "PREVIEW";
+              const pend = gs?.settle?.pending?.[playerId] || { lawyer:null, lobby:[] };
+
+              const view = (stage==="FINAL" && entry.finalUsd!=null) ? { settlementUsd: entry.finalUsd, breakdown: entry.finalBreakdown||[] } : auditPreview;
+              const sum = view?.settlementUsd ?? 0;
               const breakdown = view?.breakdown || [];
+
               const inv = gs?.inventory?.[playerId] || { experts:[] };
-              const usable = (inv.experts||[]).filter(e=>!e.used && (e.functionKey==="STEAL_BASE_PROD" || e.functionKey==="LAWYER_TRENDS"));
+              const hasLawyer = (inv.experts||[]).some(e=>e.functionKey==="LAWYER_TRENDS" && !e.used) || !!pend.lawyer;
+              const lobbyAvail = (inv.experts||[]).filter(e=>e.functionKey==="STEAL_BASE_PROD" && !e.used).length;
+              const lobbyPending = (pend.lobby||[]).length;
+
+              const globals = gs?.trends?.byYear?.[String(gs?.year||1)]?.globals || [];
+              const blockable = globals.filter(t=>t?.lawyer?.allowed);
+              const canChooseBlockTrend = hasLawyer && blockable.length>0;
 
               return (
                 <>
                   <div className="auditBlock">
-                    {auditLoading && !committed ? (
+                    {auditLoading && !started ? (
                       <div className="muted">Počítám…</div>
                     ) : view?.error ? (
                       <div className="muted">{view.error}</div>
@@ -959,26 +1015,105 @@ export default function GamePage(){
                     )}
                   </div>
 
-                  {!committed ? (
-                    <div className="ctaRow">
-                      <button className="primaryBtn big full" onClick={commitSettle}>Zahájit audit</button>
-                      {usable.length ? (
-                        <button className="secondaryBtn big full" onClick={()=>setExpertsOpen(true)}>Povolat experty</button>
-                      ) : null}
+                  {/* Secret actions (only before start) */}
+                  {!started ? (
+                    <div className="auditSecret">
+                      <div className="auditSecretTitle">Tajné akce</div>
+
+                      {/* Lawyer */}
+                      <div className="auditSecretCard">
+                        <div className="auditSecretHead">
+                          <div>
+                            <div className="auditSecretName">Právník</div>
+                            <div className="muted">1×: buď blokuje negativní trend, nebo zablokuje největší škodu od lobbistů.</div>
+                          </div>
+                          <div className={"pill "+(hasLawyer?"ok":"bad")}>{hasLawyer?"Mám":"Nemám"}</div>
+                        </div>
+
+                        <div className="auditSecretBody">
+                          <div className="segRow">
+                            <button className={"segBtn "+(auditLawyerMode==="NONE"?"on":"")} onClick={()=>{ setAuditLawyerMode("NONE"); setAuditLawyerTrendKey(""); auditSetLawyer(null); }}>Bez právníka</button>
+                            <button className={"segBtn "+(auditLawyerMode==="SHIELD_LOBBY"?"on":"")} disabled={!hasLawyer} onClick={()=>{ setAuditLawyerMode("SHIELD_LOBBY"); setAuditLawyerTrendKey(""); auditSetLawyer({ mode:"SHIELD_LOBBY" }); }}>Štít vs lobbista</button>
+                            <button className={"segBtn "+(auditLawyerMode==="BLOCK_TREND"?"on":"")} disabled={!canChooseBlockTrend} onClick={()=>{ setAuditLawyerMode("BLOCK_TREND"); if(!auditLawyerTrendKey && blockable[0]?.key) setAuditLawyerTrendKey(blockable[0].key); }}>Blokovat trend</button>
+                          </div>
+
+                          {auditLawyerMode==="BLOCK_TREND" ? (
+                            <div className="auditInline" style={{marginTop:10}}>
+                              <div className="muted" style={{marginBottom:6}}>Vyber trend (rok {gs?.year})</div>
+                              <select
+                                className="select"
+                                value={auditLawyerTrendKey}
+                                onChange={(e)=>{
+                                  const v = e.target.value;
+                                  setAuditLawyerTrendKey(v);
+                                  auditSetLawyer({ mode:"BLOCK_TREND", trendKey: v });
+                                }}
+                              >
+                                {blockable.map(t=> (
+                                  <option key={t.key} value={t.key}>{t.icon} {t.name}</option>
+                                ))}
+                              </select>
+                              <button className="ghostBtn full" style={{marginTop:10}} disabled={!hasLawyer || !auditLawyerTrendKey} onClick={()=>auditSetLawyer({ mode:"BLOCK_TREND", trendKey: auditLawyerTrendKey })}>Potvrdit volbu trendu</button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {/* Lobbyist */}
+                      <div className="auditSecretCard">
+                        <div className="auditSecretHead">
+                          <div>
+                            <div className="auditSecretName">Lobbista</div>
+                            <div className="muted">Krádež = přesun nejvyšší roční base produkce tradiční investice. Sabotáž = −50 % výsledku.</div>
+                          </div>
+                          <div className={"pill "+(lobbyAvail>0?"ok":"bad")}>{lobbyAvail}× volné</div>
+                        </div>
+
+                        <div className="auditSecretBody">
+                          {lobbyPending ? (
+                            <div className="auditPills">
+                              {pend.lobby.map((a,idx)=>{
+                                const targetName = (gs?.players||[]).find(p=>p.playerId===a.targetPid)?.name || "Hráč";
+                                const lbl = a.type==="STEAL" ? "Krádež" : "Sabotáž";
+                                return (
+                                  <div key={idx} className="auditPill">
+                                    <span>{lbl} → {targetName}</span>
+                                    <button className="pillX" onClick={()=>auditRemoveLobby(idx)}>×</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : <div className="muted">Zatím žádné akce.</div>}
+
+                          <button className="secondaryBtn big full" style={{marginTop:10}} disabled={lobbyPending>=lobbyAvail} onClick={()=>{ setAuditLobbyTarget((gs?.players||[]).find(p=>p.playerId!==playerId)?.playerId || null); setAuditLobbyType("STEAL"); setAuditLobbyOpen(true); }}>
+                            + Přidat lobbistu
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
+                  ) : null}
+
+                  {/* Primary action */}
+                  {!paid ? (
                     <>
-                      {!allCommitted ? (
+                      {!started ? (
+                        <div className="ctaRow">
+                          <button className="primaryBtn big full" onClick={commitSettle}>Zahájit audit</button>
+                        </div>
+                      ) : stage!=="FINAL" ? (
                         <div className="muted" style={{marginTop:10}}>Čekám na ostatní hráče…</div>
                       ) : (
                         <div className="ctaRow">
-                          {usable.length ? (
-                            <button className="secondaryBtn big full" onClick={()=>setExpertsOpen(true)}>Povolat experty</button>
-                          ) : null}
-                          <button className="primaryBtn big full" onClick={()=>{ setSettlePrivacy("reveal"); }}>Potvrdit audit (ukázat)</button>
+                          <button className="primaryBtn big full" onClick={auditPay}>{(sum||0)>=0 ? "Vyplatit dividendu" : "Uhradit ztráty"}</button>
                         </div>
                       )}
                     </>
+                  ) : (
+                    <div className="privacyLock">
+                      <div className="privacyTitle">Částka pro banku</div>
+                      <div className={"privacyAmt "+((entry.finalUsd||0)>=0?"pos":"neg")}>{(entry.finalUsd||0)>=0?"+":""}{entry.finalUsd||0} USD</div>
+                      <div className="muted" style={{marginTop:10}}>Polož telefon na stůl a ukaž jen tuto částku. Detailní rozpad je skrytý.</div>
+                    </div>
                   )}
                 </>
               );
@@ -1039,6 +1174,36 @@ export default function GamePage(){
         </Modal>
       ) : null}
 
+      {/* Audit: add lobbyist secret action */}
+      {auditLobbyOpen && gs?.phase==="SETTLE" && !gs?.settle?.entries?.[playerId]?.started ? (
+        <Modal title="Lobbista – tajná akce" onClose={()=>setAuditLobbyOpen(false)}>
+          <div className="muted">Vyber cíl a typ akce. Soupeři neuvidí, co nastavíš.</div>
+          <div style={{display:"grid",gap:10,marginTop:12}}>
+            <div>
+              <div className="muted" style={{marginBottom:6}}>Cíl</div>
+              <select className="select" value={auditLobbyTarget||""} onChange={(e)=>setAuditLobbyTarget(e.target.value)}>
+                {(gs?.players||[]).filter(p=>p.playerId!==playerId).map(p=> (
+                  <option key={p.playerId} value={p.playerId}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div className="muted" style={{marginBottom:6}}>Typ</div>
+              <select className="select" value={auditLobbyType} onChange={(e)=>setAuditLobbyType(e.target.value)}>
+                <option value="STEAL">Krádež (přesun base produkce)</option>
+                <option value="SABOTAGE">Sabotáž (−50 % výsledku)</option>
+              </select>
+            </div>
+          </div>
+          <div className="ctaRow" style={{marginTop:12}}>
+            <button className="secondaryBtn big full" onClick={()=>setAuditLobbyOpen(false)}>Zrušit</button>
+            <button className="primaryBtn big full" disabled={!auditLobbyTarget} onClick={()=>{ auditAddLobby({ type: auditLobbyType, targetPid: auditLobbyTarget }); setAuditLobbyOpen(false); }}>
+              Přidat
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+
       {/* Acquisition: scanned card confirmation (always top) */}
       {scanPreview?.card ? (
         <SuperTopModal
@@ -1057,7 +1222,7 @@ export default function GamePage(){
               {scanPreview.card.kind==="INVESTMENT" ? (
                 <div className="muted" style={{marginTop:8}}>
                   Kontinent: <b>{scanPreview.card.continent}</b> • Trh: <b>{scanPreview.card.market}</b> • Typ: <b>{scanPreview.card.type}</b>
-                  <br/>Základní produkce: <b>+{scanPreview.card.usdProduction} USD</b>
+                  <br/>Základní produkce: <b>+{(scanPreview.card.usdProduction||0)*1000} USD</b>
                 </div>
               ) : scanPreview.card.kind==="MINING_FARM" ? (
                 <div className="muted" style={{marginTop:8}}>
@@ -1128,8 +1293,8 @@ export default function GamePage(){
       />
       <PrivacyCard
         kind="SETTLE"
-        mode={(gs?.phase==="SETTLE" && gs?.settle?.entries?.[playerId]?.committed) ? settlePrivacy : "edit"}
-        amountText={`${settleAmount>=0?"+":""}${settleAmount??0} USD`}
+        mode={(gs?.phase==="SETTLE" && gs?.settle?.entries?.[playerId]?.paid) ? "hidden" : "edit"}
+        amountText={`${(settleAmount??0)>=0?"+":""}${settleAmount??0} USD`}
         onReveal={()=>setSettlePrivacy("reveal")}
         onHide={()=>setSettlePrivacy("hidden")}
       />
@@ -1224,7 +1389,7 @@ export default function GamePage(){
                           <button key={c.cardId} className="listItem clickable" onClick={()=>setExpertCard(c.cardId)}>
                             <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
                               <div><b>{c.cardId}</b> • {c.name}</div>
-                              <div className="pill">+{c.usdProduction} USD</div>
+                              <div className="pill">+{(c.usdProduction||0)*1000} USD</div>
                             </div>
                             <div className="muted">{c.continent} • {c.type}</div>
                           </button>
@@ -1656,7 +1821,7 @@ function AssetsPanel({ inv }){
               <span className={"tiDot " + tiKind(c)} aria-hidden="true"></span>
               <b>{c.cardId}</b> • {c.name}
             </div>
-            <div className="muted">{c.continent} • {c.type} • +{c.usdProduction} USD/rok</div>
+            <div className="muted">{c.continent} • {c.type} • +{(c.usdProduction||0)*1000} USD/rok</div>
           </div>
         )) : <div className="muted">Zatím žádné.</div>}
       </div>
@@ -1724,7 +1889,7 @@ function CardsPanel({ inv }){
               </div>
               <div className="tileBottom">
                 <div className="tileId">{c.cardId}</div>
-                <div className="tileVal">+{c.usdProduction} USD/rok</div>
+                <div className="tileVal">+{(c.usdProduction||0)*1000} USD/rok</div>
               </div>
             </div>
           )) : <div className="muted">Zatím žádné.</div>}
@@ -1794,7 +1959,7 @@ function ExpertsPanel({ inv }){
 
 function AccountingPanel({ gs, playerId, gameId }){
   const inv = gs?.inventory?.[playerId] || { investments:[], miningFarms:[], experts:[] };
-  const baseUsd = (inv.investments||[]).reduce((s,c)=>s + Number(c.usdProduction||0), 0);
+  const baseUsd = (inv.investments||[]).reduce((s,c)=>s + (Number(c.usdProduction||0)*1000), 0);
   // (v3 test) region/global bonus rules are not fully encoded; show nominal placeholders.
   const regionalBonusUsd = 0;
   const globalBonusUsd = 0;

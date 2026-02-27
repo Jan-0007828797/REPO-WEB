@@ -1142,6 +1142,32 @@ button{ font-family:inherit; }
 .auditVal.neg{ color: rgba(251,113,133,.98); }
 .auditVal.neu{ color: rgba(245,247,255,.70); }
 
+.auditSecret{ margin-top: 14px; display:flex; flex-direction:column; gap: 12px; }
+.auditSecretTitle{ color: var(--muted2); font-weight: 950; letter-spacing:.08em; text-transform: uppercase; font-size: 11px; }
+.auditSecretCard{ border-radius: 18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.16); padding: 12px; }
+.auditSecretHead{ display:flex; align-items:flex-start; justify-content:space-between; gap: 10px; }
+.auditSecretName{ font-weight: 950; }
+.auditSecretBody{ margin-top: 10px; }
+
+.pill{ border-radius: 999px; padding: 6px 10px; font-weight: 900; font-size: 12px; border:1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.18); }
+.pill.ok{ color: rgba(52,211,153,.98); }
+.pill.bad{ color: rgba(251,113,133,.98); }
+
+.segRow{ display:flex; gap: 8px; flex-wrap:wrap; }
+.segBtn{ border-radius: 999px; padding: 10px 12px; border:1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.18); color: rgba(245,247,255,.88); font-weight: 900; }
+.segBtn.on{ background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.22); }
+.segBtn:disabled{ opacity:.45; }
+
+.auditPills{ display:flex; flex-direction:column; gap: 8px; margin-top: 10px; }
+.auditPill{ display:flex; align-items:center; justify-content:space-between; gap: 10px; border-radius: 14px; padding: 10px 12px; border:1px solid rgba(255,255,255,.10); background: rgba(0,0,0,.16); font-weight: 850; }
+.pillX{ border:none; background: transparent; color: rgba(245,247,255,.70); font-weight: 950; font-size: 16px; line-height: 1; padding: 0 6px; }
+
+.privacyLock{ margin-top: 14px; border-radius: 22px; border:1px solid rgba(255,255,255,.16); background: rgba(0,0,0,.55); padding: 18px; text-align:center; }
+.privacyTitle{ color: var(--muted2); font-weight: 950; letter-spacing:.08em; text-transform: uppercase; font-size: 11px; }
+.privacyAmt{ margin-top: 8px; font-weight: 1000; font-size: 40px; font-variant-numeric: tabular-nums; }
+.privacyAmt.pos{ color: rgba(52,211,153,.98); }
+.privacyAmt.neg{ color: rgba(251,113,133,.98); }
+
 .marketBtn{ transition: transform .08s ease, filter .08s ease, background .12s ease; }
 .marketBtn:hover{ filter: brightness(1.08); }
 
