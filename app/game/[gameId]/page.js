@@ -169,7 +169,7 @@ function PhaseBar({ phase, bizStep }){
         const active = p.key===activeKey;
         return (
           <div key={p.key} className={"stepChip"+(active?" active":"")}>
-            <span className="stepIcon" aria-hidden="true"><MonoIcon name={p.icon} size={28} /></span>
+            <span className="stepIcon" aria-hidden="true"><MonoIcon name={p.icon} size={36} /></span>
             <span className="stepText">{p.label}</span>
           </div>
         );

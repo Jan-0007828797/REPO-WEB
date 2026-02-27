@@ -104,7 +104,7 @@ button{ font-family:inherit; }
   font-family: Orbitron, Inter, system-ui;
   letter-spacing: 3px;
   font-weight: 800;
-  font-size: 28px;
+  font-size: 42px; /* +50% */
   margin:0;
 }
 
@@ -315,7 +315,7 @@ button{ font-family:inherit; }
   font-family: Orbitron, Inter, system-ui;
   letter-spacing: 3px;
   font-weight: 800;
-  font-size: 24px;
+  font-size: 36px; /* +50% */
   margin: 0;
 }
 
@@ -344,17 +344,20 @@ button{ font-family:inherit; }
   border:1px solid rgba(255,255,255,.12);
   background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.04));
   color: var(--muted);
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, color 180ms ease;
 }
 
 .stepIcon{ display:flex; align-items:center; }
-.stepIcon svg{ width: 34px; height: 34px; }
+.stepIcon svg{ width: 44px; height: 44px; } /* +30% */
 .stepText{ font-size: 12px; font-weight: 800; }
 
 .stepChip.active{
-  background: linear-gradient(90deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-  border-color: rgba(255,255,255,.30);
-  color: rgba(245,247,255,.98);
-  box-shadow: 0 0 0 4px rgba(255,255,255,.06), 0 0 20px rgba(255,255,255,.10);
+  /* Active phase must be unmistakable at a glance */
+  background: linear-gradient(180deg, rgba(66,165,245,.42), rgba(66,165,245,.18));
+  border-color: rgba(66,165,245,.78);
+  color: rgba(255,255,255,.98);
+  box-shadow: 0 0 0 4px rgba(66,165,245,.18), 0 0 26px rgba(66,165,245,.34);
+  transform: translateY(-1px);
 }
 .stepText{ white-space:nowrap; }
 
