@@ -42,24 +42,118 @@ function GMTopModal({ title, onClose, children }){
   );
 }
 
+function MonoIcon({ name, size=28, className="" }){
+  // Monochrome, bold icons (not emoji) – consistent across the whole app.
+  const s = Number(size)||28;
+  const common = { viewBox:"0 0 64 64", width:s, height:s, fill:"none", stroke:"currentColor", strokeWidth:5, strokeLinecap:"round", strokeLinejoin:"round" };
+  if(name==="crown"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M10 44l6-22 16 14 16-14 6 22" />
+        <path d="M14 44h36" />
+        <path d="M18 52h28" />
+      </svg>
+    );
+  }
+  if(name==="pin"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M32 58s16-14 16-30a16 16 0 10-32 0c0 16 16 30 16 30z" />
+        <circle cx="32" cy="28" r="6" />
+      </svg>
+    );
+  }
+  if(name==="envelope"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <rect x="10" y="18" width="44" height="28" rx="6" />
+        <path d="M12 20l20 16 20-16" />
+      </svg>
+    );
+  }
+  if(name==="camera"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M20 20l4-6h16l4 6" />
+        <rect x="12" y="20" width="40" height="30" rx="8" />
+        <circle cx="32" cy="35" r="9" />
+      </svg>
+    );
+  }
+  if(name==="btc"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M26 12v40" />
+        <path d="M38 12v40" />
+        <path d="M22 18h16a8 8 0 010 16H22" />
+        <path d="M22 34h18a7 7 0 010 14H22" />
+      </svg>
+    );
+  }
+  if(name==="receipt"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M18 10h28v44l-4-3-4 3-4-3-4 3-4-3-4 3V10z" />
+        <path d="M24 22h16" />
+        <path d="M24 30h16" />
+        <path d="M24 38h12" />
+      </svg>
+    );
+  }
+  // Investment type marks (monochrome). Color is carried by the background/border.
+  if(name==="agri"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M22 50V18" />
+        <path d="M32 50V14" />
+        <path d="M42 50V18" />
+        <path d="M22 26c6 0 10-4 10-10" />
+        <path d="M42 26c-6 0-10-4-10-10" />
+        <path d="M22 36c6 0 10-4 10-10" />
+        <path d="M42 36c-6 0-10-4-10-10" />
+      </svg>
+    );
+  }
+  if(name==="mining"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M14 44l14-14 8 8 14-14" />
+        <path d="M10 48h44" />
+        <path d="M26 22l6-6 6 6" />
+      </svg>
+    );
+  }
+  if(name==="industry"){
+    return (
+      <svg {...common} className={className} aria-hidden="true">
+        <path d="M14 50V30l14 8V30l14 8V22l8 6v22H14z" />
+        <path d="M22 50V40" />
+        <path d="M30 50V40" />
+        <path d="M38 50V40" />
+      </svg>
+    );
+  }
+  return null;
+}
+
 function badgeFor(kind){
-  if(kind==="ML") return { emoji:"🟩", label:"MARKET LEADER" };
-  if(kind==="AUCTION") return { emoji:"🟨", label:"DRAŽBA – OBÁLKA" };
-  if(kind==="CRYPTO") return { emoji:"🟦", label:"KRYPTOTRANSAKCE" };
-  if(kind==="SETTLE") return { emoji:"🟥", label:"AUDIT" };
-  return { emoji:"", label:"" };
+  if(kind==="ML") return { icon:"crown", label:"MARKET LEADER" };
+  if(kind==="AUCTION") return { icon:"envelope", label:"DRAŽBA – OBÁLKA" };
+  if(kind==="CRYPTO") return { icon:"btc", label:"KRYPTOTRANSAKCE" };
+  if(kind==="SETTLE") return { icon:"receipt", label:"AUDIT" };
+  return { icon:null, label:"" };
 }
 
 function PhaseBar({ phase, bizStep }){
   // Top bar: always show the whole game flow (no popups; fixed screens).
   // Trends are NOT a phase anymore (still available via bottom tab "Trendy").
   const phases = [
-    { key:"ML_BID", label:"Market Leader", icon:"👑" },
-    { key:"MOVE", label:"Výběr trhu", icon:"📍" },
-    { key:"AUCTION_ENVELOPE", label:"Dražba", icon:"✉️" },
-    { key:"ACQUIRE", label:"Akvizice", icon:"📷" },
-    { key:"CRYPTO", label:"Kryptoburza", icon:"₿" },
-    { key:"SETTLE", label:"Audit", icon:"🧾" },
+    { key:"ML_BID", label:"Market Leader", icon:"crown" },
+    { key:"MOVE", label:"Výběr trhu", icon:"pin" },
+    { key:"AUCTION_ENVELOPE", label:"Dražba", icon:"envelope" },
+    { key:"ACQUIRE", label:"Akvizice", icon:"camera" },
+    { key:"CRYPTO", label:"Kryptoburza", icon:"btc" },
+    { key:"SETTLE", label:"Audit", icon:"receipt" },
   ];
 
   const activeKey = (()=>{
@@ -75,7 +169,7 @@ function PhaseBar({ phase, bizStep }){
         const active = p.key===activeKey;
         return (
           <div key={p.key} className={"stepChip"+(active?" active":"")}>
-            <span className="stepIcon">{p.icon}</span>
+            <span className="stepIcon" aria-hidden="true"><MonoIcon name={p.icon} size={28} /></span>
             <span className="stepText">{p.label}</span>
           </div>
         );
@@ -91,7 +185,7 @@ function PrivacyCard({ kind, mode, amountText, onReveal, onHide }){
     <div className="privacyBackdrop">
       <div className="privacyFull">
         <div className="privacyBadge">
-          <span className="privacyEmoji">{b.emoji}</span>
+          {b.icon ? <span className="privacyEmoji" aria-hidden="true"><MonoIcon name={b.icon} size={30} /></span> : null}
           <span className="privacyLabel">{b.label}</span>
         </div>
 
@@ -161,6 +255,7 @@ export default function GamePage(){
   const [scanPreview, setScanPreview] = useState(null); // {card}
   const [acqMoreOpen, setAcqMoreOpen] = useState(false);
   const [acqHadAny, setAcqHadAny] = useState(false);
+  const [acqNoScanLocal, setAcqNoScanLocal] = useState(false); // instant UX feedback
   const videoRef = useRef(null);
   const codeReader = useMemo(()=> new BrowserMultiFormatReader(), []);
 
@@ -434,16 +529,13 @@ export default function GamePage(){
   const cryptoDelta = gs?.crypto?.entries?.[playerId]?.deltaUsd;
   const settleAmount = gs?.settle?.entries?.[playerId]?.settlementUsd;
 
-  const headerPhase =
-    gs?.phase==="BIZ" ? "Byznysová fáze" :
-    gs?.phase==="CRYPTO" ? "Krypto fáze" :
-    gs?.phase==="SETTLE" ? "Audit" :
-    gs?.status==="LOBBY" ? "Lobby" :
-    gs?.status==="GAME_OVER" ? "Konec hry" : "";
+  // Golden rule / UX: Remove redundant phase text under the brand.
 
   const markets = gs?.catalog?.markets || [];
   const locks = gs?.biz?.marketLocks || {};
   const myMove = gs?.biz?.move?.[playerId];
+  const acqEntry = gs?.biz?.acquire?.entries?.[playerId] || null;
+  const acqNoScanCommitted = !!acqEntry?.committed && acqEntry?.gotCard===false;
 
   // Tabs content data
   const myInv = gs?.inventory?.[playerId] || { investments:[], miningFarms:[], experts:[] };
@@ -459,7 +551,6 @@ export default function GamePage(){
         <div className="topHeaderRow">
           <div>
             <div className="brand">KRYPTOPOLY</div>
-            <div className="subBrand">{headerPhase}</div>
           </div>
           <div className="topHeaderRight">
             {gs?.year ? <div className="yearPill">Rok {gs.year}</div> : null}
@@ -500,7 +591,7 @@ export default function GamePage(){
           <div className="card phaseCard">
             <div className="phaseHeader">
               <div className="phaseLeft">
-                <div className="phaseIcon">👑</div>
+                <div className="phaseIcon" aria-hidden="true"><MonoIcon name="crown" size={48} /></div>
                 <div>
                   <div className="phaseTitle">Market Leader</div>
                   <div className="phaseSub">Zadej nabídku v USD. Po potvrzení se displej automaticky skryje.</div>
@@ -526,7 +617,7 @@ export default function GamePage(){
           <div className="card phaseCard">
             <div className="phaseHeader">
               <div className="phaseLeft">
-                <div className="phaseIcon">📍</div>
+                <div className="phaseIcon" aria-hidden="true"><MonoIcon name="pin" size={48} /></div>
                 <div>
                   <div className="phaseTitle">Výběr trhu</div>
                   <div className="phaseSub">Vyber trh. Jakmile klikneš, trh zmizí ostatním. Volba je definitivní.</div>
@@ -548,6 +639,13 @@ export default function GamePage(){
                 if (t.includes("těž") || t.includes("tez") || t.includes("mining") || t.includes("těža") ) return "mining";
                 if (t.includes("země") || t.includes("zeme") || t.includes("agri") || t.includes("agriculture")) return "agri";
                 return "other";
+              };
+
+              const markFor = (k) => {
+                if(k==="agri") return "agri";
+                if(k==="mining") return "mining";
+                if(k==="industry") return "industry";
+                return "industry";
               };
               const continentLabel = (c) => {
                 const x = String(c || "");
@@ -595,11 +693,18 @@ export default function GamePage(){
                     onClick={() => pickMarket(m.marketId)}
                     title={m.name || m.marketId}
                   >
-                    <div className="marketCellTop">
-                      <span className="marketCellTitle">{m.name || m.marketId}</span>
-                      <span className="marketCellTag">{m.type}</span>
+                    <div className="marketCellInner">
+                      <div className={"marketGlyph " + cls} aria-hidden="true">
+                        <MonoIcon name={markFor(cls)} size={56} />
+                      </div>
+                      <div className="marketInfo">
+                        <div className="marketCellTop">
+                          <span className="marketCellTitle">{m.name || m.marketId}</span>
+                          <span className="marketCellTag">{m.type}</span>
+                        </div>
+                        <div className="marketCellMeta">{m.marketId}</div>
+                      </div>
                     </div>
-                    <div className="marketCellMeta">{m.marketId}</div>
                     {mine ? <div className="pill">MOJE</div> : locked ? <div className="pill dim">OBS.</div> : null}
                   </button>
                 );
@@ -637,7 +742,7 @@ export default function GamePage(){
           <div className="card phaseCard">
             <div className="phaseHeader">
               <div className="phaseLeft">
-                <div className="phaseIcon">✉️</div>
+                <div className="phaseIcon" aria-hidden="true"><MonoIcon name="envelope" size={48} /></div>
                 <div>
                   <div className="phaseTitle">Dražba – obálka</div>
                   <div className="phaseSub">Zadej nabídku v USD, nebo zvol neúčast. Pokud máš lobbistu, můžeš získat „poslední šanci“.</div>
@@ -703,7 +808,7 @@ export default function GamePage(){
           <div className="card phaseCard">
             <div className="phaseHeader">
               <div className="phaseLeft">
-                <div className="phaseIcon">📷</div>
+                <div className="phaseIcon" aria-hidden="true"><MonoIcon name="camera" size={48} /></div>
                 <div>
                   <div className="phaseTitle">Akvizice</div>
                   <div className="phaseSub">Definitivně potvrď, zda jsi získal kartu. Pokud ano, naskenuj QR kód (můžeš vícekrát).</div>
@@ -712,12 +817,21 @@ export default function GamePage(){
             </div>
 
             <div className="ctaRow" style={{marginTop:10}}>
-              <button className="primaryBtn big full" onClick={()=>{ setScanErr(""); setScanOn(true); }}>
-                Získal jsem kartu
-              </button>
-              <button className="secondaryBtn big full" onClick={()=>{ commitAcquire({ gotCard:false }); }}>
-                Nezískal jsem kartu
-              </button>
+              {(!acqNoScanCommitted && !acqNoScanLocal) ? (
+                <button className="primaryBtn big full" onClick={()=>{ setScanErr(""); setScanOn(true); }}>
+                  Získat kartu
+                </button>
+              ) : null}
+
+              {(!acqNoScanCommitted && !acqNoScanLocal) ? (
+                <button className="secondaryBtn big full" onClick={()=>{ setAcqNoScanLocal(true); setScanOn(false); setScanPreview(null); commitAcquire({ gotCard:false }); }}>
+                  Nebudu skenovat
+                </button>
+              ) : (
+                <button className="secondaryBtn big full" disabled>
+                  Čekám na ostatní hráče
+                </button>
+              )}
             </div>
 
             {acqHadAny ? (
@@ -730,14 +844,25 @@ export default function GamePage(){
           <div className="card phaseCard">
             <div className="phaseHeader">
               <div className="phaseLeft">
-                <div className="phaseIcon">₿</div>
+                <div className="phaseIcon" aria-hidden="true"><MonoIcon name="btc" size={48} /></div>
                 <div>
                   <div className="phaseTitle">Kryptoburza</div>
                   <div className="phaseSub">Naklikej změny v kusech. Pak potvrď. Ukazovací režim skryje detaily.</div>
                 </div>
               </div>
             </div>
-            <div className="cryptoList">
+            {/* UX: confirm + total must be visible before the table */}
+            <button className="primaryBtn full" onClick={commitCrypto}>Potvrdit transakci</button>
+            <div className="cryptoTotal" style={{marginTop:10}}>
+              {(()=>{
+                const total = ["BTC","ETH","LTC","SIA"].reduce((acc,sym)=> acc + (-(cryptoD[sym]||0) * (gs.crypto?.rates?.[sym]||0)), 0);
+                const cls = total>0?"pos":total<0?"neg":"neu";
+                const txt = total>0?`+${total} USD`:total<0?`${total} USD`:`0 USD`;
+                return <div className={"cryptoTotalVal "+cls}>Celkem: {txt}</div>;
+              })()}
+            </div>
+
+            <div className="cryptoList" style={{marginTop:12}}>
               {["BTC","ETH","LTC","SIA"].map(sym=>{
                 const rate = gs.crypto?.rates?.[sym] || 0;
                 const val = cryptoD[sym] || 0;
@@ -781,22 +906,13 @@ export default function GamePage(){
                 );
               })}
             </div>
-            <div className="cryptoTotal">
-              {(()=>{
-                const total = ["BTC","ETH","LTC","SIA"].reduce((acc,sym)=> acc + (-(cryptoD[sym]||0) * (gs.crypto?.rates?.[sym]||0)), 0);
-                const cls = total>0?"pos":total<0?"neg":"neu";
-                const txt = total>0?`+${total} USD`:total<0?`${total} USD`:`0 USD`;
-                return <div className={"cryptoTotalVal "+cls}>Celkem: {txt}</div>;
-              })()}
-            </div>
-            <button className="primaryBtn full" onClick={commitCrypto}>Potvrdit transakci</button>
             <button className="ghostBtn full" onClick={()=>{ setCryptoD({BTC:0,ETH:0,LTC:0,SIA:0}); commitCrypto(); }}>Neobchoduji</button>
           </div>
         ) : gs.phase==="SETTLE" ? (
           <div className="card phaseCard">
             <div className="phaseHeader">
               <div className="phaseLeft">
-                <div className="phaseIcon">🧾</div>
+                <div className="phaseIcon" aria-hidden="true"><MonoIcon name="receipt" size={48} /></div>
                 <div>
                   <div className="phaseTitle">{(() => {
                     const all = gs?.players?.every(p=>gs?.settle?.entries?.[p.playerId]?.committed);
@@ -1463,7 +1579,7 @@ function CryptoTrendCard({ revealed, crypto }){
   return (
     <div className="trendCard wide cryptoCard">
       <div className="trendTop">
-        <div className="trendIcon">₿</div>
+        <div className="trendIcon" aria-hidden="true"><MonoIcon name="btc" size={38} /></div>
         <div className="trendTitle">{crypto?.name || "Kryptotrend"}</div>
       </div>
       <div className="cryptoGrid">
@@ -1523,13 +1639,23 @@ function TrendCard({ revealed, title, icon, wide, onClick, clickable }){
 }
 
 function AssetsPanel({ inv }){
+  const tiKind = (item) => {
+    const t = String(item?.type||"").toUpperCase();
+    if(t.includes("AGRO") || t.includes("ZEM")) return "agri";
+    if(t.includes("MINING") || t.includes("TEZ") || t.includes("TĚŽ")) return "mining";
+    if(t.includes("INDUSTRY") || t.includes("PRUM") || t.includes("PRŮM")) return "industry";
+    return "industry";
+  };
   return (
     <div>
       <div className="secTitle">Tradiční investice</div>
       <div className="list">
         {inv.investments.length? inv.investments.map(c=>(
           <div key={c.cardId} className="listItem">
-            <div><b>{c.cardId}</b> • {c.name}</div>
+            <div className="listLine">
+              <span className={"tiDot " + tiKind(c)} aria-hidden="true"></span>
+              <b>{c.cardId}</b> • {c.name}
+            </div>
             <div className="muted">{c.continent} • {c.type} • +{c.usdProduction} USD/rok</div>
           </div>
         )) : <div className="muted">Zatím žádné.</div>}
@@ -1553,17 +1679,23 @@ function CardsPanel({ inv }){
   const miningFarms = inv?.miningFarms || [];
   const experts = inv?.experts || [];
 
+  const tiKind = (item) => {
+    const t = String(item?.type||"").toUpperCase();
+    if(t.includes("AGRO") || t.includes("ZEM")) return "agri";
+    if(t.includes("MINING") || t.includes("TEZ") || t.includes("TĚŽ")) return "mining";
+    if(t.includes("INDUSTRY") || t.includes("PRUM") || t.includes("PRŮM")) return "industry";
+    return "industry";
+  };
+
+  const TypeBadge = ({ kind }) => {
+    return (
+      <div className={"tiBadge " + kind} aria-hidden="true">
+        <MonoIcon name={kind} size={44} className="tiBadgeIcon" />
+      </div>
+    );
+  };
+
   const iconFor = (kind, item) => {
-    if(kind==="INVESTMENT"){
-      const t = String(item?.type||"").toUpperCase();
-      if(t.includes("AGRO")) return "🌿";
-      if(t.includes("MINING")) return "⛏️";
-      if(t.includes("INDUSTRY")) return "🏭";
-      if(t.includes("TECH")) return "🧠";
-      if(t.includes("LOGISTICS")) return "🚚";
-      if(t.includes("ENERGY")) return "⚡";
-      return "📈";
-    }
     if(kind==="MINING_FARM") return "⚙️";
     if(kind==="EXPERT"){
       const k = String(item?.functionKey||"");
@@ -1584,7 +1716,7 @@ function CardsPanel({ inv }){
           {investments.length ? investments.map(c=> (
             <div key={c.cardId} className="cardTile">
               <div className="tileTop">
-                <div className="tileIcon">{iconFor("INVESTMENT", c)}</div>
+                <div className="tileIcon"><TypeBadge kind={tiKind(c)} /></div>
                 <div className="tileMeta">
                   <div className="tileTitle">{c.name}</div>
                   <div className="tileSub">{c.continent} • {c.type}</div>

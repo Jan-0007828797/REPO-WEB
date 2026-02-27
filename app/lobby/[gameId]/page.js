@@ -55,7 +55,8 @@ export default function Lobby(){
   },[gameId,r]);
 
   function start(){ const s=getSocket(); s.emit("start_game",{gameId},()=>{}); }
-  const canStart = isGM && cfg && players.length>=2; // GM + alespoň 1 hráč
+  // Golden rule: keep max players unchanged; allow test mode where only GM plays.
+  const canStart = isGM && cfg && players.length>=1; // GM alone is allowed
 
   return (
     <div className="container">

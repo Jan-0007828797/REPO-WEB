@@ -29,6 +29,11 @@
   --neoAmber:#fbbf24;
   --danger:#fb7185;
 
+  /* Traditional investments (Bible) */
+  --tiAgro:#4CAF50;
+  --tiMining:#8D6E63;
+  --tiIndustry:#42A5F5;
+
   /* aliases used across legacy components */
   --primary: var(--neoMint);
   --accent: var(--neoCyan);
@@ -221,7 +226,7 @@ button{ font-family:inherit; }
   position: sticky;
   top: 0;
   z-index: 5;
-  padding: 10px 10px 12px;
+  padding: 10px 10px 10px;
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(8,14,28,.92), rgba(8,14,28,.70));
   border:1px solid var(--stroke);
@@ -324,7 +329,7 @@ button{ font-family:inherit; }
 .stepRow{
   display:flex;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 6px;
   overflow-x:auto;
   padding-bottom: 4px;
 }
@@ -340,14 +345,18 @@ button{ font-family:inherit; }
   background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.04));
   color: var(--muted);
 }
+
+.stepIcon{ display:flex; align-items:center; }
+.stepIcon svg{ width: 34px; height: 34px; }
+.stepText{ font-size: 12px; font-weight: 800; }
+
 .stepChip.active{
-  background: linear-gradient(90deg, rgba(52,211,153,.22), rgba(56,189,248,.18));
-  border-color: rgba(56,189,248,.38);
+  background: linear-gradient(90deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
+  border-color: rgba(255,255,255,.30);
   color: rgba(245,247,255,.98);
-  box-shadow: 0 0 0 4px rgba(56,189,248,.08), 0 0 22px rgba(56,189,248,.20);
+  box-shadow: 0 0 0 4px rgba(255,255,255,.06), 0 0 20px rgba(255,255,255,.10);
 }
-.stepIcon{ font-size: 16px; }
-.stepText{ font-size: 13px; font-weight: 800; white-space:nowrap; }
+.stepText{ white-space:nowrap; }
 
 .content{
   margin-top: 12px;
@@ -437,6 +446,23 @@ button{ font-family:inherit; }
   min-height: 74px;
   transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
 }
+
+.marketCellInner{
+  display:flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.marketGlyph{
+  flex: 0 0 48%;
+  border-radius: 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+}
+.marketGlyph svg{ width: 56px; height: 56px; }
+.marketInfo{ flex: 1 1 auto; min-width: 0; }
 .marketCell:hover{ transform: translateY(-1px); border-color: rgba(255,255,255,.18); }
 .marketCell:active{ transform: translateY(0px) scale(.99); }
 .marketCell.placeholder{
@@ -459,10 +485,14 @@ button{ font-family:inherit; }
 .marketCellTag{ font-size: 11px; color: rgba(245,247,255,.70); }
 .marketCellMeta{ margin-top: 4px; font-size: 11px; color: rgba(245,247,255,.62); }
 
-/* Category colors (industry/mining/agri) */
-.marketCell.industry{ border-color: rgba(56,189,248,.22); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(56,189,248,.08) inset; }
-.marketCell.mining{ border-color: rgba(245,158,11,.22); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(245,158,11,.08) inset; }
-.marketCell.agri{ border-color: rgba(52,211,153,.22); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(52,211,153,.08) inset; }
+/* Traditional investment colors (agri/mining/industry) – used on the board and across the app */
+.marketCell.industry{ border-color: rgba(66,165,245,.38); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(66,165,245,.10) inset; }
+.marketCell.mining{ border-color: rgba(141,110,99,.45); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(141,110,99,.12) inset; }
+.marketCell.agri{ border-color: rgba(76,175,80,.40); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(76,175,80,.10) inset; }
+
+.marketGlyph.industry{ background: linear-gradient(180deg, rgba(66,165,245,.28), rgba(66,165,245,.10)); }
+.marketGlyph.mining{ background: linear-gradient(180deg, rgba(141,110,99,.28), rgba(141,110,99,.10)); }
+.marketGlyph.agri{ background: linear-gradient(180deg, rgba(76,175,80,.26), rgba(76,175,80,.10)); }
 .marketCell.farm{ border-color: rgba(167,139,250,.22); box-shadow: 0 16px 42px rgba(0,0,0,.30), 0 0 0 1px rgba(167,139,250,.08) inset; }
 
 .marketCell.locked{ opacity: .55; filter: grayscale(.2); }
@@ -1008,12 +1038,11 @@ button{ font-family:inherit; }
 .phaseHeader{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .phaseLeft{ display:flex; align-items:center; gap:10px; }
 .phaseIcon{
-  width:44px; height:44px;
-  border-radius: 14px;
+  width:56px; height:56px;
+  border-radius: 18px;
   display:flex; align-items:center; justify-content:center;
   background: rgba(255,255,255,.08);
   border: 1px solid rgba(255,255,255,.12);
-  font-size: 20px;
 }
 .phaseTitle{ font-size: 18px; font-weight: 900; letter-spacing:.2px; }
 .phaseSub{ margin-top:6px; color: var(--muted); font-size: 14px; line-height:1.35; }
@@ -1051,6 +1080,27 @@ button{ font-family:inherit; }
   font-size: 22px;
   flex: 0 0 auto;
 }
+
+/* Traditional investment badge (monochrome icon on colored field) */
+.tiBadge{
+  width: 44px; height: 44px;
+  border-radius: 16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.96);
+}
+.tiBadgeIcon{ width: 44px; height: 44px; }
+.tiBadge.agri{ background: linear-gradient(180deg, rgba(76,175,80,.50), rgba(76,175,80,.18)); }
+.tiBadge.mining{ background: linear-gradient(180deg, rgba(141,110,99,.55), rgba(141,110,99,.18)); }
+.tiBadge.industry{ background: linear-gradient(180deg, rgba(66,165,245,.55), rgba(66,165,245,.18)); }
+
+.listLine{ display:flex; align-items:center; gap: 10px; }
+.tiDot{ width: 10px; height: 10px; border-radius: 999px; display:inline-block; border:1px solid rgba(255,255,255,.18); }
+.tiDot.agri{ background: rgba(76,175,80,.85); }
+.tiDot.mining{ background: rgba(141,110,99,.88); }
+.tiDot.industry{ background: rgba(66,165,245,.90); }
 .tileMeta{ display:flex; flex-direction:column; gap: 3px; }
 .tileTitle{ font-weight: 950; }
 .tileSub{ color: var(--muted); font-size: 12px; line-height:1.25; }
