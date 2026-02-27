@@ -561,6 +561,14 @@ export default function GamePage(){
   const cryptoDelta = gs?.crypto?.entries?.[playerId]?.deltaUsd;
   const settleAmount = gs?.settle?.entries?.[playerId]?.finalUsd;
 
+  // Inflation / price level helpers
+  const yearKey = String(gs?.year || 1);
+  const activeGlobals = gs?.trends?.byYear?.[yearKey]?.globals || [];
+  const hasGlobal = (k)=> activeGlobals.some(t=>t?.key===k);
+  const basePrice = Number(gs?.basePriceUsd || 0);
+  const auctionStartPrice = basePrice * (hasGlobal("BOOM_DOUBLE_MIN_AUCTION_PRICE") ? 2 : 1);
+  const auctionMinIncrement = hasGlobal("HIGH_EXPECTATIONS_MIN_BID_BY_PRICE_LEVEL") ? basePrice : null;
+
   // Golden rule / UX: Remove redundant phase text under the brand.
 
   const markets = gs?.catalog?.markets || [];
@@ -603,6 +611,7 @@ export default function GamePage(){
           </div>
         </div>
         {gs?.year ? <div className="yearBelowTitle">Rok {gs.year}</div> : null}
+        {gs?.year ? <div className="priceBelowYear">Základní cena: {(gs?.basePriceUsd||0).toLocaleString("cs-CZ")} USD</div> : null}
         <PhaseBar phase={gs?.phase} bizStep={gs?.bizStep} />
       </div>
 
@@ -786,6 +795,21 @@ export default function GamePage(){
                 <div>
                   <div className="phaseTitle">Dražba – obálka</div>
                   <div className="phaseSub">Zadej nabídku v USD, nebo zvol neúčast. Pokud máš lobbistu, můžeš získat „poslední šanci“.</div>
+                  {basePrice ? (
+                    <div className="phaseMeta">
+                      Cenová hladina: <b>{basePrice.toLocaleString("cs-CZ")} USD</b>
+                      {auctionStartPrice ? (
+                        <>
+                          <span className="dot">•</span>Vyvolávací cena: <b>{auctionStartPrice.toLocaleString("cs-CZ")} USD</b>
+                        </>
+                      ) : null}
+                      {auctionMinIncrement ? (
+                        <>
+                          <span className="dot">•</span>Min. příhoz: <b>{auctionMinIncrement.toLocaleString("cs-CZ")} USD</b>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

@@ -1062,6 +1062,15 @@ button{ font-family:inherit; }
 .phaseTitle{ font-size: 18px; font-weight: 900; letter-spacing:.2px; }
 .phaseSub{ margin-top:6px; color: var(--muted); font-size: 14px; line-height:1.35; }
 
+.phaseMeta{
+  margin-top: 8px;
+  color: rgba(243,246,255,.78);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.phaseMeta b{ color: rgba(243,246,255,.95); }
+.phaseMeta .dot{ margin: 0 8px; opacity: .65; }
+
 .ctaRow{ display:flex; gap:10px; margin-top: 12px; flex-wrap:wrap; }
 .ctaRow .primaryBtn, .ctaRow .ghostBtn, .ctaRow .secondaryBtn{ width: 100%; }
 
@@ -1239,4 +1248,19 @@ button{ font-family:inherit; }
   color: rgba(243,246,255,.92);
   font-weight: 900;
   letter-spacing: .2px;
+}
+
+.priceBelowYear{
+  margin-top: -6px;
+  margin-bottom: 10px;
+  align-self: center;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  color: rgba(243,246,255,.78);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: .15px;
 }
