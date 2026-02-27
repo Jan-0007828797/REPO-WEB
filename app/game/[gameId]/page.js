@@ -231,6 +231,12 @@ export default function GamePage(){
   const [cryptoPrivacy, setCryptoPrivacy] = useState("edit");
   const [settlePrivacy, setSettlePrivacy] = useState("edit");
 
+  // Legacy expert modal state (kept to avoid runtime errors; not used in the new Audit UX)
+  const [expertsOpen, setExpertsOpen] = useState(false);
+  const [expertPick, setExpertPick] = useState(null);
+  const [expertTarget, setExpertTarget] = useState(null);
+  const [expertCard, setExpertCard] = useState(null);
+
   // Privacy overlays are hard-lock (cannot be dismissed; disappear on phase change)
 
   // inputs
