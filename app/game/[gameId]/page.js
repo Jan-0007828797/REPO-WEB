@@ -136,6 +136,28 @@ function MonoIcon({ name, size=28, className="" }){
   return null;
 }
 
+function ContinentSilhouette({ continent, size=220 }){
+  const w = Number(size)||220;
+  const h = Math.round(w * (160/240));
+  const c = String(continent||"");
+  // Simple silhouettes (stylized blobs) – test-grade, but readable.
+  const path =
+    c==="EUROPE" ? "M40,70 C55,40 90,30 110,45 C125,30 150,30 160,50 C175,60 190,55 200,70 C205,90 190,105 170,110 C150,120 135,105 120,110 C95,120 70,110 55,95 C42,85 35,85 40,70 Z" :
+    c==="ASIA" ? "M30,85 C40,45 85,25 120,40 C140,20 175,25 195,45 C215,60 215,95 190,110 C170,125 145,120 130,105 C110,125 85,125 65,110 C45,100 25,105 30,85 Z" :
+    c==="AFRICA" ? "M95,20 C120,15 150,25 160,50 C175,75 160,95 150,110 C140,125 125,140 110,140 C90,140 80,120 75,105 C65,80 70,60 80,45 C85,35 80,25 95,20 Z" :
+    c==="N_AMERICA" ? "M35,55 C40,30 70,20 95,30 C110,15 135,15 150,30 C170,35 190,30 205,45 C220,60 215,85 195,95 C180,105 165,100 150,90 C135,105 110,110 95,95 C75,105 55,100 45,85 C35,75 30,70 35,55 Z" :
+    c==="S_AMERICA" ? "M125,25 C145,30 160,50 155,70 C150,90 165,105 155,120 C145,140 120,150 105,140 C92,130 100,110 92,95 C80,75 90,55 100,40 C110,30 112,22 125,25 Z" :
+    c==="OCEANIA" ? "M55,85 C60,65 80,55 100,65 C120,50 150,55 165,70 C180,85 175,110 150,115 C130,120 120,110 105,100 C90,115 70,110 60,100 C52,95 50,95 55,85 Z" :
+    "M60,60 C80,40 120,40 140,60 C160,80 140,110 110,110 C80,110 50,80 60,60 Z";
+
+  return (
+    <svg viewBox="0 0 240 160" width={w} height={h} aria-hidden="true" style={{display:"block"}}>
+      <path d={path} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)" strokeWidth="4" />
+    </svg>
+  );
+}
+
+
 function badgeFor(kind){
   if(kind==="ML") return { icon:"crown", label:"MARKET LEADER" };
   if(kind==="AUCTION") return { icon:"envelope", label:"DRAŽBA – OBÁLKA" };
@@ -221,6 +243,8 @@ export default function GamePage(){
   const [err, setErr] = useState("");
   const [tab, setTab] = useState(null);
   const [gmPanelOpen, setGmPanelOpen] = useState(false);
+  const [movePickedOpen, setMovePickedOpen] = useState(false);
+  const [movePickedSeen, setMovePickedSeen] = useState(false);
   const [trendModal, setTrendModal] = useState(null); // {name, icon, desc}
   const [regionalModal, setRegionalModal] = useState(null); // {continent, name, icon, desc}
   const [mlTrendIntroOpen, setMlTrendIntroOpen] = useState(false);
@@ -574,6 +598,15 @@ export default function GamePage(){
   const markets = gs?.catalog?.markets || [];
   const locks = gs?.biz?.marketLocks || {};
   const myMove = gs?.biz?.move?.[playerId];
+
+  // MOVE: after definitive selection, show one-time confirmation popup (golden rule: one obvious acknowledgement).
+  useEffect(()=>{
+    if(gs?.phase!=="BIZ" || gs?.bizStep!=="MOVE") return;
+    if(!myMove?.committed) return;
+    if(movePickedSeen) return;
+    setMovePickedOpen(true);
+    setMovePickedSeen(true);
+  }, [gs?.phase, gs?.bizStep, myMove?.committed, movePickedSeen]);
   const acqEntry = gs?.biz?.acquire?.entries?.[playerId] || null;
   const acqNoScanCommitted = !!acqEntry?.committed && acqEntry?.gotCard===false;
 
@@ -610,8 +643,7 @@ export default function GamePage(){
             <div className="brand">KRYPTOPOLY</div>
           </div>
         </div>
-        {gs?.year ? <div className="yearBelowTitle">Rok {gs.year}</div> : null}
-        {gs?.year ? <div className="priceBelowYear">Základní cena: {(gs?.basePriceUsd||0).toLocaleString("cs-CZ")} USD</div> : null}
+        {gs?.year ? <div className="yearBelowTitle">Rok {gs.year} • Základní cena: {(gs?.basePriceUsd||0).toLocaleString("cs-CZ")} USD</div> : null}
         <PhaseBar phase={gs?.phase} bizStep={gs?.bizStep} />
       </div>
 
@@ -760,6 +792,7 @@ export default function GamePage(){
               };
 
               return (
+                <>
                 <div className="marketTable">
                   {rows.map((r) => (
                     <div key={r.cont} className="marketRow">
@@ -784,6 +817,34 @@ export default function GamePage(){
                     </div>
                   ) : null}
                 </div>
+
+                {movePickedOpen ? (
+                  <Modal
+                    title="Trh vybrán"
+                    onClose={()=>setMovePickedOpen(false)}
+                  >
+                    {(() => {
+                      const mSel = markets.find(x=>x.marketId===myMove?.marketId) || null;
+                      const cont = mSel?.continent || "";
+                      const k = mSel ? (String(mSel.type||"").toUpperCase()==="MINING"||String(mSel.type||"").toUpperCase()==="TEZBA" ? "mining" : (String(mSel.type||"").toUpperCase()==="AGRO"||String(mSel.type||"").toUpperCase()==="AGRI"||String(mSel.type||"").toUpperCase()==="ZEMEDELSTVI" ? "agri" : "industry")) : "industry";
+                      const color = k==="agri" ? "#16a34a" : k==="mining" ? "#8b5a2b" : "#2563eb";
+                      return (
+                        <div style={{display:"grid", gap:12}}>
+                          <div className="muted">Tvoje volba je uložena. Polož telefon na stůl až po potvrzení GM.</div>
+                          <div style={{display:"flex", justifyContent:"center"}}>
+                            <div style={{position:"relative", width:240, maxWidth:"100%"}}>
+                              <ContinentSilhouette continent={cont} size={240} />
+                              <div style={{position:"absolute", left:"50%", top:"50%", transform:"translate(-50%,-50%)", width:64, height:64, borderRadius:14, background:color, boxShadow:"0 10px 30px rgba(0,0,0,.35)", border:"2px solid rgba(255,255,255,.25)"}} />
+                            </div>
+                          </div>
+                          <button className="primaryBtn big full" onClick={()=>setMovePickedOpen(false)}>OK</button>
+                        </div>
+                      );
+                    })()}
+                  </Modal>
+                ) : null}
+
+                </>
               );
             })()}
           </div>
